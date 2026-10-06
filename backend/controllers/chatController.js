@@ -78,8 +78,10 @@ export const sendMessage = async (req, res, next) => {
   try {
     const { text } = req.body;
     const senderName = req.user?.name || 'Customer';
+    const conversationId = req.params.id;
     const msg = {
       _id: 'msg_' + Date.now(),
+      conversationId,
       sender: { name: senderName },
       text,
       createdAt: new Date().toISOString(),
@@ -87,10 +89,8 @@ export const sendMessage = async (req, res, next) => {
 
     const io = req.app.get('io');
     if (io) {
-      io.emit('chat_notification', {
-        senderName,
-        text,
-      });
+      // Emit to the specific conversation room so both participants receive it instantly
+      io.to(`conversation_${conversationId}`).emit('new_message', msg);
     }
 
     res.status(201).json({

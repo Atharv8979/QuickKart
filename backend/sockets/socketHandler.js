@@ -21,20 +21,24 @@ export const initializeSocket = (io) => {
       }
     });
 
-    // Leave conversation room
+    // Leave specific conversation room
     socket.on('leave_conversation', (conversationId) => {
       if (conversationId) {
         socket.leave(`conversation_${conversationId}`);
       }
     });
 
-    // Handle typing indicator
+    // Handle typing indicator - forward to conversation room
     socket.on('typing_start', ({ conversationId, senderName }) => {
-      socket.to(`conversation_${conversationId}`).emit('user_typing', { conversationId, senderName });
+      if (conversationId) {
+        socket.to(`conversation_${conversationId}`).emit('user_typing', { conversationId, senderName });
+      }
     });
 
     socket.on('typing_stop', ({ conversationId }) => {
-      socket.to(`conversation_${conversationId}`).emit('user_stopped_typing', { conversationId });
+      if (conversationId) {
+        socket.to(`conversation_${conversationId}`).emit('user_stopped_typing', { conversationId });
+      }
     });
 
     socket.on('disconnect', () => {
