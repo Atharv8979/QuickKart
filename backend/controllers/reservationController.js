@@ -1,5 +1,20 @@
 import { supabase } from '../config/supabase.js';
-import { FALLBACK_RESERVATIONS } from '../utils/fallbackData.js';
+import { FALLBACK_RESERVATIONS, FALLBACK_SHOPS } from '../utils/fallbackData.js';
+
+// Demo-catalogue slugs (sehore-demo-*, sehore-item-*) are not database UUIDs.
+// They are routed to this linked live partner shop so EVERY listing — live or
+// demo — can create a real hold ticket that a shopkeeper actually receives.
+const DEMO_FALLBACK_SHOP_ID = 'b0000000-0000-0000-0000-000000000001';
+
+const isUuidLike = (value) =>
+  typeof value === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+
+const resolveLiveShopId = (rawShopId) => {
+  if (isUuidLike(rawShopId)) return rawShopId;
+  // Demo storefront or missing id -> linked partner shop (never null, column is NOT NULL)
+  return DEMO_FALLBACK_SHOP_ID;
+};
 
 // @desc    Create In-Store Hold & Reservation Ticket (Chapter 5.4 / Fig 5.4)
 // @route   POST /api/reservations
@@ -17,11 +32,11 @@ export const createReservation = async (req, res, next) => {
     const totalAmount = parseFloat(agreedPrice) * (parseInt(quantity) || 1);
 
     if (supabase) {
-      let targetShopId = shopId;
-      if (!targetShopId) {
-        const { data: firstShop } = await supabase.from('shops').select('id').limit(1).single();
-        if (firstShop) targetShopId = firstShop.id;
-      }
+      // Demo storefronts (sehore-demo-*) resolve to the linked partner shop so
+      // the FK insert succeeds; only live UUID product ids are sent, and the
+      // column is nullable so demo products post null + keep productName.
+      const targetShopId = resolveLiveShopId(shopId);
+      const targetProductId = isUuidLike(productId) ? productId : null;
 
       const { data: reservation, error } = await supabase
         .from('reservations')
@@ -30,7 +45,7 @@ export const createReservation = async (req, res, next) => {
             reservation_code: reservationCode,
             customer_id: req.user.id,
             shop_id: targetShopId,
-            product_id: productId || null,
+            product_id: targetProductId,
             product_name: productName,
             quantity: parseInt(quantity) || 1,
             unit: 'piece',
@@ -84,12 +99,60 @@ export const createReservation = async (req, res, next) => {
       });
     }
 
+    const fallbackId = 'res_' + Date.now();
+    // Same demo routing in fallback mode so the ticket lands in the linked
+    // partner shopkeeper's inbox (Sharma) instead of being dropped.
+    const fallbackShopId = resolveLiveShopId(shopId);
+    const fallbackProductId = isUuidLike(productId) ? productId : null;
+    const fallbackReservation = {
+      _id: fallbackId,
+      id: fallbackId,
+      reservationCode,
+      customer_id: req.user.id,
+      customerId: req.user.id,
+      customerName: req.user.name || 'Walk-in Customer',
+      customerPhone: req.user.phone || '',
+      // Keep the exact shop the customer ordered from so the linked
+      // shopkeeper dashboard can filter it (Sharma vs Gupta).
+      shop_id: fallbackShopId,
+      product_id: fallbackProductId,
+      productId: fallbackProductId,
+      productName,
+      product_name: productName,
+      quantity: parseInt(quantity) || 1,
+      unit: 'piece',
+      agreedPrice: parseFloat(agreedPrice),
+      agreed_price: parseFloat(agreedPrice),
+      totalAmount,
+      total_amount: totalAmount,
+      status: 'PENDING',
+      expiresAt,
+      expires_at: expiresAt,
+      customerNote,
+      customer_note: customerNote,
+      createdAt: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+
+    FALLBACK_RESERVATIONS.unshift(fallbackReservation);
+
+    // Real-time socket notification so the linked shopkeeper sees it instantly
+    const ioFallback = req.app.get('io');
+    if (ioFallback) {
+      ioFallback.emit('new_reservation', {
+        reservationCode,
+        productName,
+        quantity: fallbackReservation.quantity,
+        shopId: fallbackReservation.shop_id,
+      });
+    }
+
     res.status(201).json({
       success: true,
       message: 'In-store hold ticket created successfully!',
       reservation: {
-        _id: 'res_' + Date.now(),
-        id: 'res_' + Date.now(),
+        _id: fallbackId,
+        id: fallbackId,
         reservationCode,
         productName,
         quantity: parseInt(quantity) || 1,
@@ -98,6 +161,8 @@ export const createReservation = async (req, res, next) => {
         status: 'PENDING',
         expiresAt,
         shopId: {
+          _id: fallbackReservation.shop_id,
+          id: fallbackReservation.shop_id,
           shopName: 'Sharma Hardware & Sanitation Store',
           contactPhone: '+91 9876543210',
           address: { street: 'Shop 14, Karol Bagh', city: 'New Delhi' },
@@ -153,11 +218,11 @@ export const getCustomerReservations = async (req, res, next) => {
       }
     }
 
-    res.json({
-      success: true,
-      count: 1,
-      reservations: [
-        {
+    // Linked fallback: this customer's newly-created holds first, then sample
+    const mine = (FALLBACK_RESERVATIONS || []).filter(
+      (r) => (r.customerId || r.customer_id) === req.user.id
+    );
+    const sample = {
           _id: 'sample_res_1',
           id: 'sample_res_1',
           reservationCode: 'QK-8421',
@@ -174,8 +239,12 @@ export const getCustomerReservations = async (req, res, next) => {
             contactPhone: '+91 9876543210',
             address: { street: 'Shop 14, Karol Bagh', city: 'New Delhi' },
           },
-        },
-      ],
+        };
+    const combined = [...mine, sample];
+    res.json({
+      success: true,
+      count: combined.length,
+      reservations: combined,
     });
   } catch (error) {
     next(error);
@@ -354,10 +423,26 @@ export const getShopReservations = async (req, res, next) => {
       }
     }
 
+    // Linked fallback: each shopkeeper only sees holds placed on their own shop.
+    // Sharma (…0002) owns b000…0001, Gupta (…0003) owns b000…0002 — same IDs
+    // the customer dashboard orders against, so the link never breaks.
+    const ownedShop = FALLBACK_SHOPS.find((s) => s.owner_id === req.user.id);
+    let scoped = FALLBACK_RESERVATIONS;
+    if (ownedShop) {
+      const ownedId = ownedShop._id || ownedShop.id;
+      scoped = FALLBACK_RESERVATIONS.filter(
+        (r) => (r.shop_id || r.shopId) === ownedId
+      );
+    } else if (req.user.role !== 'admin') {
+      // Unknown shopkeeper without a registered shop sees nothing rather than
+      // every shop's orders.
+      scoped = [];
+    }
+
     res.json({
       success: true,
-      count: FALLBACK_RESERVATIONS.length,
-      reservations: FALLBACK_RESERVATIONS,
+      count: scoped.length,
+      reservations: scoped,
     });
   } catch (error) {
     next(error);

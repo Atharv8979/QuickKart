@@ -1,16 +1,33 @@
 ﻿import React from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, ShoppingBag, Store, MessageSquare, Star, TrendingUp, Clock, HandCoins } from 'lucide-react';
+import { MapPin, ShoppingBag, Store, MessageSquare, Star, TrendingUp, Clock, HandCoins, Scale } from 'lucide-react';
 import { Badge } from '../common/Badge';
+import { getStockQuantity, getPriceValue, isDemoCatalogue } from './customerItemUtils';
 
-export const ProductCard = ({ product, onReserveClick, onChatClick, onBargain, medicalMode = false }) => {
+export const ProductCard = ({ product, onReserveClick, onChatClick, onBargain, onCompareToggle, isCompared = false, medicalMode = false }) => {
+  const stockQuantity = getStockQuantity(product);
+  const price = getPriceValue(product);
+  const mrp = Number.isFinite(Number(product.mrp)) ? Number(product.mrp) : null;
   const discountPercent =
-    product.mrp && product.mrp > product.price
-      ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
+    mrp !== null && price !== null && mrp > price
+      ? Math.round(((mrp - price) / mrp) * 100)
       : 0;
 
-  const isLowStock = product.stockStatus === 'low_stock';
-  const isOutOfStock = product.stockStatus === 'out_of_stock' || product.quantityInStock <= 0;
+  // A null/unknown stock quantity must never be rendered as "Out of Stock" —
+  // only an explicit 0, isAvailable=false or an out_of_stock status means the
+  // item genuinely cannot be held (see customerItemUtils.getStockQuantity).
+  const isOutOfStock =
+    product.stockStatus === 'out_of_stock' ||
+    product.isAvailable === false ||
+    (stockQuantity !== null && stockQuantity <= 0);
+  const isLowStock =
+    !isOutOfStock &&
+    (product.stockStatus === 'low_stock' || (stockQuantity !== null && stockQuantity <= 3));
+  const stockUnknown = stockQuantity === null && !product.stockStatus;
+  const isDemoListing = isDemoCatalogue(product);
+  const ratingValue = Number(product.rating);
+  const hasRating = Number.isFinite(ratingValue);
+  const hasPrice = price !== null;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-card-hover transition-all duration-300 overflow-hidden flex flex-col group">
@@ -32,12 +49,23 @@ export const ProductCard = ({ product, onReserveClick, onChatClick, onBargain, m
           </span>
         )}
 
+        {/* Honest labelling for the local demo catalogue */}
+        {isDemoListing && (
+          <span className="absolute bottom-2.5 left-2.5 bg-slate-950/75 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-sm backdrop-blur-sm">
+            Demo listing
+          </span>
+        )}
+
         {/* Stock Badge */}
         <div className="absolute top-2.5 right-2.5">
           {isOutOfStock ? (
             <Badge variant="danger">Out of Stock</Badge>
+          ) : stockUnknown ? (
+            <Badge variant="neutral">Stock n/a</Badge>
           ) : isLowStock ? (
-            <Badge variant="warning">Only {product.quantityInStock} Left</Badge>
+            <Badge variant="warning">
+              {stockQuantity === null ? 'Low Stock' : `Only ${stockQuantity} Left`}
+            </Badge>
           ) : (
             <Badge variant="success">In Stock</Badge>
           )}
@@ -59,9 +87,9 @@ export const ProductCard = ({ product, onReserveClick, onChatClick, onBargain, m
           </h4>
 
           <div className="flex items-center gap-2 mt-1.5 text-[11px]">
-            {product.rating !== undefined && (
+            {hasRating && (
               <span className="flex items-center gap-0.5 font-bold text-amber-700">
-                <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> {product.rating.toFixed(1)}
+                <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> {ratingValue.toFixed(1)}
                 <span className="font-normal text-slate-400">({product.reviewCount || 0})</span>
               </span>
             )}
@@ -79,15 +107,21 @@ export const ProductCard = ({ product, onReserveClick, onChatClick, onBargain, m
 
           {/* Pricing */}
           <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-lg font-black text-slate-900">
-              ₹{product.price}
-            </span>
-            {product.mrp && product.mrp > product.price && (
-              <span className="text-xs text-slate-400 line-through">
-                ₹{product.mrp}
+            {hasPrice ? (
+              <>
+                <span className="text-lg font-black text-slate-900">₹{price}</span>
+                {mrp !== null && mrp > price && (
+                  <span className="text-xs text-slate-400 line-through">
+                    ₹{mrp}
+                  </span>
+                )}
+                <span className="text-xs text-slate-500">/ {product.unit}</span>
+              </>
+            ) : (
+              <span className="text-xs font-bold text-slate-400">
+                Price not listed — ask the shop
               </span>
             )}
-            <span className="text-xs text-slate-500">/ {product.unit}</span>
           </div>
 
         </div>
@@ -116,6 +150,20 @@ export const ProductCard = ({ product, onReserveClick, onChatClick, onBargain, m
 
           {/* Actions */}
           <div className="flex items-center gap-2 pt-1">
+            {onCompareToggle && (
+              <button
+                onClick={() => onCompareToggle(product)}
+                aria-pressed={isCompared}
+                className={`p-2 rounded-xl transition-colors ${
+                  isCompared
+                    ? 'bg-brand-600 text-white shadow-sm shadow-brand-500/20'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                title={isCompared ? 'Remove from comparison' : 'Add to comparison'}
+              >
+                <Scale className="w-4 h-4" />
+              </button>
+            )}
             {onBargain && (
               <button
                 type="button"

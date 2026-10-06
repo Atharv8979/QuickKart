@@ -1,9 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Minus, Package, Plus, Search, ShoppingBag } from 'lucide-react';
+import {
+  getStockQuantity,
+  getPriceValue,
+  isDemoCatalogue,
+  normalizeInventoryProduct,
+} from './customerItemUtils';
+import { useAuth } from '../../context/AuthContext';
 
+// null stock = "not published" and must never be reported as "Out of Stock".
 const getStockState = (product) => {
-  const quantity = Number(product.quantityInStock ?? 0);
-  if (quantity <= 0 || product.isAvailable === false) return 'out';
+  if (product.isAvailable === false) return 'out';
+  const quantity = getStockQuantity(product);
+  if (quantity === null) return 'unknown';
+  if (quantity <= 0) return 'out';
   if (quantity <= 3 || product.stockStatus === 'low_stock') return 'low';
   return 'healthy';
 };
@@ -12,62 +22,104 @@ const stockLabels = {
   healthy: { label: 'Healthy Stock', className: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
   low: { label: 'Low Stock', className: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
   out: { label: 'Out of Stock', className: 'bg-rose-50 text-rose-700 border-rose-200', dot: 'bg-rose-500' },
+  unknown: { label: 'Stock Not Published', className: 'bg-slate-50 text-slate-600 border-slate-300', dot: 'bg-slate-400' },
 };
 
 const demoStockValues = [30, 20, 45, 60, 25, 35, 18, 50];
 
-const getDemoStockValue = (product, index) => {
-  const currentStock = Number(product.quantityInStock ?? product.quantity_in_stock);
-  if (Number.isFinite(currentStock) && currentStock > 0) return currentStock;
-  const productKey = String(product._id || product.id || product.name || index);
+// Filler stock is only ever used for demo-catalogue rows whose stock is
+// genuinely unpublished. Real products keep their actual quantity — and an
+// explicit demo 0 stays 0, so out-of-stock demo items are never disguised as
+// available.
+const getDemoStockValue = (product) => {
+  if (!isDemoCatalogue(product)) return null;
+  const productKey = String(product._id || product.id || product.name || '');
   const keyScore = [...productKey].reduce((total, character) => total + character.charCodeAt(0), 0);
   return demoStockValues[keyScore % demoStockValues.length];
 };
 
 export const CustomerInventoryBoard = ({ products = [], shopId, onReserveClick, onChatClick }) => {
-  const storageKey = `quickkart_pickup_list_${shopId || 'shop'}`;
+  const legacyStorageKey = `quickkart_pickup_list_${shopId || 'shop'}`;
+  // Pickup lists are personal data: scope the saved quantities per signed-in
+  // account so a different user on this shop page starts empty instead of
+  // inheriting someone else's list.
+  const auth = useAuth() || {};
+  const userId = auth.user?.id || auth.user?._id || null;
+  const storageKey = `${legacyStorageKey}_${userId || 'guest'}`;
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [pickupQuantities, setPickupQuantities] = useState({});
-  const [pickupListLoaded, setPickupListLoaded] = useState(false);
+  const [loadedKey, setLoadedKey] = useState(null);
 
   useEffect(() => {
+    // Purge the pre-isolation key that was shared across all accounts.
+    localStorage.removeItem(legacyStorageKey);
     const saved = localStorage.getItem(storageKey);
+    let restored = {};
     if (saved) {
       try {
-        setPickupQuantities(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          restored = parsed;
+        }
       } catch {
         localStorage.removeItem(storageKey);
       }
     }
-    setPickupListLoaded(true);
-  }, [storageKey]);
+    setPickupQuantities(restored);
+    setLoadedKey(storageKey);
+  }, [storageKey, legacyStorageKey]);
 
   useEffect(() => {
-    if (!pickupListLoaded) return;
+    // Only write once the current account's bucket has been loaded — on an
+    // in-place account switch this stops the previous user's quantities from
+    // ever being persisted into the new user's slot.
+    if (loadedKey !== storageKey) return;
     localStorage.setItem(storageKey, JSON.stringify(pickupQuantities));
-  }, [pickupListLoaded, pickupQuantities, storageKey]);
+  }, [loadedKey, pickupQuantities, storageKey]);
 
-  const demoProducts = useMemo(() => products.map((product, index) => ({
-    ...product,
-    quantityInStock: getDemoStockValue(product, index),
-    isAvailable: true,
-    stockStatus: getDemoStockValue(product, index) <= 3 ? 'low_stock' : 'in_stock',
-  })), [products]);
+  // The shop profile API returns *raw* Supabase rows (`id`, `product_name`,
+  // `quantity_in_stock`, `image_url`) while other feeds return camelCase API
+  // rows and demo rows use slugs. Normalize every row up-front so the board,
+  // its chat/reserve handlers and localStorage keys all see one shape.
+  const boardProducts = useMemo(
+    () =>
+      products.map((product) => {
+        const normalized = normalizeInventoryProduct(product, shopId ? { _id: shopId } : null);
+        // Demo filler applies only when stock is unpublished AND the row is a
+        // demo-catalogue row. Explicit 0s (out of stock) are preserved.
+        if (normalized.quantityInStock === null) {
+          const filler = getDemoStockValue(normalized);
+          if (filler !== null) {
+            return {
+              ...normalized,
+              quantityInStock: filler,
+              isAvailable: true,
+              stockStatus: filler <= 3 ? 'low_stock' : 'in_stock',
+            };
+          }
+        }
+        return normalized;
+      }),
+    [products, shopId]
+  );
 
-  const counts = useMemo(() => demoProducts.reduce((result, product) => {
+  const counts = useMemo(() => boardProducts.reduce((result, product) => {
     result[getStockState(product)] += 1;
     return result;
-  }, { healthy: 0, low: 0, out: 0 }), [demoProducts]);
+  }, { healthy: 0, low: 0, out: 0, unknown: 0 }), [boardProducts]);
 
-  const visibleProducts = demoProducts.filter((product) => {
+  const visibleProducts = boardProducts.filter((product) => {
     const matchesFilter = filter === 'all' || getStockState(product) === filter;
     const searchText = `${product.name || ''} ${product.brand || ''} ${product.category || ''}`.toLowerCase();
     return matchesFilter && searchText.includes(search.toLowerCase());
   });
 
   const updatePickupQuantity = (product, change) => {
-    const stock = Math.max(0, Number(product.quantityInStock ?? 0));
+    const stock = getStockQuantity(product);
+    // Without a published stock figure there is no honest upper bound, so the
+    // pickup quantity stays put instead of guessing a limit.
+    if (stock === null) return;
     const current = pickupQuantities[product._id] || 0;
     const next = Math.max(0, Math.min(stock, current + change));
     setPickupQuantities((previous) => {
@@ -79,14 +131,14 @@ export const CustomerInventoryBoard = ({ products = [], shopId, onReserveClick, 
   };
 
   const pickupCount = Object.values(pickupQuantities).reduce((total, quantity) => total + quantity, 0);
-  const totalProducts = demoProducts.length || 1;
+  const totalProducts = boardProducts.length || 1;
   const healthWidth = Math.round((counts.healthy / totalProducts) * 100);
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
         <button type="button" onClick={() => setFilter('all')} className={`rounded-xl border px-3 py-2 text-left font-bold ${filter === 'all' ? 'bg-slate-100 border-slate-300 text-slate-900' : 'bg-white border-slate-200 text-slate-500'}`}>
-          All Products <span className="text-brand-600">({demoProducts.length})</span>
+          All Products <span className="text-brand-600">({boardProducts.length})</span>
         </button>
         <button type="button" onClick={() => setFilter('healthy')} className={`rounded-xl border px-3 py-2 text-left font-bold ${filter === 'healthy' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-200 text-slate-500'}`}>
           Healthy <span className="text-emerald-600">({counts.healthy})</span>
@@ -124,8 +176,9 @@ export const CustomerInventoryBoard = ({ products = [], shopId, onReserveClick, 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {visibleProducts.map((product) => {
             const state = getStockState(product);
-            const stock = Number(product.quantityInStock ?? 0);
-            const stateMeta = stockLabels[state];
+            const stock = getStockQuantity(product);
+            const price = getPriceValue(product);
+            const stateMeta = stockLabels[state] || stockLabels.unknown;
             const pickupQuantity = pickupQuantities[product._id] || 0;
             const isOut = state === 'out';
             return (
@@ -139,16 +192,16 @@ export const CustomerInventoryBoard = ({ products = [], shopId, onReserveClick, 
                     </div>
                     <h4 className="font-black text-sm leading-tight text-slate-900 mt-2 line-clamp-2">{product.name}</h4>
                     <p className="text-[11px] text-slate-500 mt-0.5">Brand: {product.brand || 'Local brand'}</p>
-                    <div className="flex items-baseline gap-2 mt-1"><span className="font-black text-slate-900">₹{product.price}</span>{product.mrp > product.price && <span className="text-[10px] text-slate-400 line-through">₹{product.mrp}</span>}<span className="text-[10px] text-slate-400">/ {product.unit}</span></div>
+                    <div className="flex items-baseline gap-2 mt-1">{price !== null ? (<><span className="font-black text-slate-900">₹{price}</span>{product.mrp != null && Number(product.mrp) > price && <span className="text-[10px] text-slate-400 line-through">₹{product.mrp}</span>}<span className="text-[10px] text-slate-400">/ {product.unit}</span></>) : <span className="text-[11px] font-bold text-slate-400">Price not listed — ask the shop</span>}</div>
                   </div>
                 </div>
 
                 <div className="mt-3 border-t border-slate-100 pt-3">
-                  <div className="flex items-center justify-between text-xs"><span className="font-bold text-slate-400">Current Stock:</span><span className={`font-black ${isOut ? 'text-rose-600' : state === 'low' ? 'text-amber-600' : 'text-emerald-600'}`}>{stock} {product.unit}</span></div>
+                  <div className="flex items-center justify-between text-xs"><span className="font-bold text-slate-400">Current Stock:</span><span className={`font-black ${isOut ? 'text-rose-600' : state === 'unknown' ? 'text-slate-500' : state === 'low' ? 'text-amber-600' : 'text-emerald-600'}`}>{stock === null ? 'Not published' : `${stock} ${product.unit}`}</span></div>
                   <div className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1.5">
                     <button type="button" disabled={isOut || pickupQuantity === 0} onClick={() => updatePickupQuantity(product, -1)} className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-600 disabled:opacity-40 flex items-center justify-center"><Minus className="w-4 h-4" /></button>
                     <span className="text-xs font-black text-slate-700">{pickupQuantity > 0 ? `${pickupQuantity} for pickup` : 'Add to pickup list'}</span>
-                    <button type="button" disabled={isOut || pickupQuantity >= stock} onClick={() => updatePickupQuantity(product, 1)} className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-600 disabled:opacity-40 flex items-center justify-center"><Plus className="w-4 h-4" /></button>
+                    <button type="button" disabled={isOut || stock === null || pickupQuantity >= stock} onClick={() => updatePickupQuantity(product, 1)} className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-600 disabled:opacity-40 flex items-center justify-center"><Plus className="w-4 h-4" /></button>
                   </div>
                   <div className="flex items-center gap-2 mt-2">
                     <button type="button" disabled={isOut} onClick={() => onReserveClick?.(product)} className="flex-1 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-[11px] font-black flex items-center justify-center gap-1"><Package className="w-3.5 h-3.5" /> Hold item</button>

@@ -9,6 +9,7 @@ import { Sparkles, User, Store, ShieldCheck } from 'lucide-react';
 // Public Pages
 import { LandingPage } from './pages/public/LandingPage';
 import { LoginPage } from './pages/public/LoginPage';
+import { ForgotPasswordPage } from './pages/public/ForgotPasswordPage';
 import { RegisterPage } from './pages/public/RegisterPage';
 import { AboutPage } from './pages/public/AboutPage';
 import { ContactPage } from './pages/public/ContactPage';
@@ -103,6 +104,7 @@ export default function App() {
           <Route path="/about" element={<AboutPage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/shops" element={<PublicShopsPage />} />
           <Route path="/shops/:id" element={<ShopProfilePage />} />

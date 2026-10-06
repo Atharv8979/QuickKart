@@ -2,9 +2,21 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { MapPin, Star, Store, MessageSquare, CheckCircle2, PackageCheck, AlertTriangle, Clock, Truck, Landmark, Navigation } from 'lucide-react';
 import { Badge } from '../common/Badge';
+import { isDemoCatalogue } from './customerItemUtils';
 
 export const ShopCard = ({ shop, onBroadcastClick }) => {
-  const isOpen = shop.openingHours?.isOpenNow ?? true;
+  // Demo shops are local fixtures, not verified businesses — they must never
+  // wear the "Verified" badge that real, moderation-approved shops earn.
+  const isDemoShop = isDemoCatalogue(shop);
+  // Opening hours / distance / rating are only claimed when the shop record
+  // actually publishes them; missing data is shown as "not listed", never
+  // guessed (no fabricated "Open", "Nearby" or "4.5").
+  const hoursKnown = Boolean(shop.openingHours);
+  const isOpen = hoursKnown ? shop.openingHours.isOpenNow !== false : null;
+  const hasDistance = shop.distanceKm != null && Number.isFinite(Number(shop.distanceKm));
+  const distanceValue = hasDistance ? Number(shop.distanceKm) : null;
+  const hasRating = shop.rating != null && Number.isFinite(Number(shop.rating));
+  const ratingValue = hasRating ? Number(shop.rating) : null;
   const products = shop.topProducts || [];
   const availableItems = shop.availableItemCount ?? products.filter((item) => item.isAvailable !== false).length;
   const lowStockItems = shop.lowStockItemCount ?? products.filter((item) => {
@@ -30,26 +42,33 @@ export const ShopCard = ({ shop, onBroadcastClick }) => {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-900/25 to-transparent" />
 
-        {/* Distance Badge */}
-        <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-full text-xs font-bold text-slate-800 shadow-sm flex items-center gap-1">
-          <MapPin className="w-3.5 h-3.5 text-brand-600" />
-          <span>{shop.distanceKm ? `${shop.distanceKm.toFixed(1)} km` : 'Nearby'}</span>
-        </div>
+        {/* Distance Badge — only when the shop record carries a real distance */}
+        {hasDistance && (
+          <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-full text-xs font-bold text-slate-800 shadow-sm flex items-center gap-1">
+            <MapPin className="w-3.5 h-3.5 text-brand-600" />
+            <span>{distanceValue.toFixed(1)} km</span>
+          </div>
+        )}
 
         {/* Live open/closed + verification chips */}
         <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold backdrop-blur-md shadow-sm ${
-            isOpen ? 'bg-emerald-500/90 text-white' : 'bg-slate-200/90 text-slate-600'
+            !hoursKnown ? 'bg-slate-200/90 text-slate-600' : isOpen ? 'bg-emerald-500/90 text-white' : 'bg-slate-200/90 text-slate-600'
           }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? 'bg-white animate-pulse' : 'bg-slate-400'}`} />
-            {isOpen ? 'Open' : 'Closed'}
+            <span className={`w-1.5 h-1.5 rounded-full ${hoursKnown && isOpen ? 'bg-white animate-pulse' : 'bg-slate-400'}`} />
+            {!hoursKnown ? 'Hours n/a' : isOpen ? 'Open' : 'Closed'}
           </span>
-          {shop.verificationStatus === 'verified' && (
+          {isDemoShop ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/90 text-white backdrop-blur-md text-[10px] font-bold shadow-sm">
+              <AlertTriangle className="w-3 h-3" />
+              Demo shop
+            </span>
+          ) : shop.verificationStatus === 'verified' ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/90 text-white backdrop-blur-md text-[10px] font-bold shadow-sm">
               <CheckCircle2 className="w-3 h-3" />
               Verified
             </span>
-          )}
+          ) : null}
         </div>
 
         {/* Shop Title overlay */}
@@ -69,8 +88,14 @@ export const ShopCard = ({ shop, onBroadcastClick }) => {
         <div className="flex items-center justify-between text-xs">
           <div className="inline-flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200/70 font-bold text-amber-900 shadow-sm">
             <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-            <span>{shop.rating?.toFixed(1) || '4.5'}</span>
-            <span className="text-amber-600/80 font-medium">({shop.reviewCount ?? shop.numReviews ?? 0})</span>
+            {hasRating ? (
+              <>
+                <span>{ratingValue.toFixed(1)}</span>
+                <span className="text-amber-600/80 font-medium">({shop.reviewCount ?? shop.numReviews ?? 0})</span>
+              </>
+            ) : (
+              <span className="text-amber-700/80 font-medium">No ratings yet</span>
+            )}
           </div>
 
           <Badge variant="primary">{shop.category}</Badge>
@@ -110,9 +135,21 @@ export const ShopCard = ({ shop, onBroadcastClick }) => {
 
         {/* Hours & Delivery capability */}
         <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold">
-          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${isOpen ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-600'}`}>
+          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
+            !hoursKnown
+              ? 'bg-slate-50 border-slate-200 text-slate-500'
+              : isOpen
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+              : 'bg-rose-50 border-rose-200 text-rose-600'
+          }`}>
             <Clock className="w-3 h-3" />
-            {isOpen ? `Open until ${shop.openingHours?.close || '9:00 PM'}` : 'Closed'}
+            {!hoursKnown
+              ? 'Opening hours not listed'
+              : isOpen
+              ? shop.openingHours?.close
+                ? `Open until ${shop.openingHours.close}`
+                : 'Open now'
+              : 'Closed'}
           </span>
           {shop.deliveryAvailable ? (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border bg-sky-50 border-sky-200 text-sky-700">
@@ -131,9 +168,9 @@ export const ShopCard = ({ shop, onBroadcastClick }) => {
         <div className="bg-slate-50/80 rounded-2xl p-2.5 text-xs text-slate-600 space-y-1.5 border border-slate-200/70">
           <div className="flex justify-between items-center">
             <span className="text-slate-400 font-medium">Live Status</span>
-            <span className={`font-bold inline-flex items-center gap-1 ${isOpen ? 'text-emerald-600' : 'text-rose-500'}`}>
-              <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-              {isOpen ? 'Open Now' : 'Closed'}
+            <span className={`font-bold inline-flex items-center gap-1 ${!hoursKnown ? 'text-slate-500' : isOpen ? 'text-emerald-600' : 'text-rose-500'}`}>
+              <span className={`w-2 h-2 rounded-full ${!hoursKnown ? 'bg-slate-300' : isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+              {!hoursKnown ? 'Hours not listed' : isOpen ? 'Open Now' : 'Closed'}
             </span>
           </div>
           <div className="flex items-center justify-between border-t border-slate-200 pt-1.5">

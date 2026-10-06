@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
+import { useLocation } from '../../context/LocationContext';
+import { useSocket } from '../../context/SocketContext';
 import { shopService } from '../../services/shopService';
 import { requestService } from '../../services/requestService';
 import { reservationService } from '../../services/reservationService';
@@ -9,6 +11,7 @@ import { productService } from '../../services/productService';
 
 // Shopkeeper Components
 import { DashboardSummaryCards } from '../../components/shopkeeper/DashboardSummaryCards';
+import { NetworkShopCard } from '../../components/shopkeeper/NetworkShopCard';
 import { CustomerRequestCard } from '../../components/shopkeeper/CustomerRequestCard';
 import { GoldenTarajuModal } from '../../components/shopkeeper/GoldenTarajuModal';
 import { InventoryVisibilitySection } from '../../components/shopkeeper/InventoryVisibilitySection';
@@ -39,12 +42,19 @@ import {
 export const ShopDashboardPage = () => {
   const { user } = useAuth();
   const { addToast } = useNotification();
+  const { coordinates, addressText, radiusKm } = useLocation();
+  const { socket } = useSocket();
 
   // Core Data
   const [shop, setShop] = useState(null);
   const [products, setProducts] = useState([]);
   const [requests, setRequests] = useState([]);
   const [reservations, setReservations] = useState([]);
+  // Linked shop network — the SAME nearby-shops feed the customer dashboard
+  // orders from (same API, same IDs), so both dashboards stay linked and a
+  // customer "Hold & Reserve" always resolves to a shop visible here.
+  const [networkShops, setNetworkShops] = useState([]);
+  const [networkLoading, setNetworkLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState(null);
@@ -62,11 +72,17 @@ export const ShopDashboardPage = () => {
     else setRefreshing(true);
 
     try {
-      const [shopRes, reqRes, resRes, prodRes] = await Promise.all([
+      const [shopRes, reqRes, resRes, networkRes] = await Promise.all([
         shopService.getMyShop(),
         requestService.getShopRelevantRequests(),
         reservationService.getShopReservations(),
-        productService.getProducts(),
+        // Same endpoint + params as the customer DiscoverFeed, so the
+        // shopkeeper sees exactly the shops a customer can order from.
+        shopService.getNearbyShops({
+          lng: coordinates[0],
+          lat: coordinates[1],
+          radius: radiusKm,
+        }).catch(() => ({ success: false, shops: [] })),
       ]);
 
       if (shopRes.success) {
@@ -78,9 +94,23 @@ export const ShopDashboardPage = () => {
       if (resRes.success) {
         setReservations(resRes.reservations || []);
       }
-      if (prodRes.success) {
-        setProducts(prodRes.products || []);
+      // Scope inventory to THIS shop's live UUID (reuse shopRes — no second
+      // /my-shop call) so the count matches the linked shop customers order from.
+      try {
+        const myId = shopRes?.shop?._id || shopRes?.shop?.id;
+        const prodRes = myId
+          ? await productService.getProducts({ shopId: myId })
+          : await productService.getProducts();
+        if (prodRes.success) {
+          setProducts(prodRes.products || []);
+        }
+      } catch {
+        /* inventory stays as-is on transient failure */
       }
+      if (networkRes?.success) {
+        setNetworkShops(networkRes.shops || []);
+      }
+      setNetworkLoading(false);
     } catch (err) {
       console.error('Error loading shop dashboard data:', err);
     } finally {
@@ -91,7 +121,24 @@ export const ShopDashboardPage = () => {
 
   useEffect(() => {
     fetchDashboardData(true);
-  }, []);
+  }, [coordinates?.[0], coordinates?.[1], radiusKm]);
+
+  // Live order link: when a customer places a hold / broadcast, the backend
+  // emits a socket event — refresh this shopkeeper's inbox instantly so the
+  // request appears without a manual refresh.
+  useEffect(() => {
+    if (!socket) return;
+    const refreshLinkedOrders = () => fetchDashboardData(false);
+    socket.on('new_reservation', refreshLinkedOrders);
+    socket.on('new_broadcast_request', refreshLinkedOrders);
+    socket.on('reservation_updated', refreshLinkedOrders);
+    return () => {
+      socket.off('new_reservation', refreshLinkedOrders);
+      socket.off('new_broadcast_request', refreshLinkedOrders);
+      socket.off('reservation_updated', refreshLinkedOrders);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket]);
 
   // Compute Metrics for Feature 6 (Dashboard Summary Cards)
   const todayStart = new Date();
@@ -153,7 +200,7 @@ export const ShopDashboardPage = () => {
   const handleBargainSubmit = async (requestId, payload) => {
     const res = await requestService.bargainRequest(requestId, payload);
     if (res.success) {
-      addToast(res.message || 'Counter offer sent via Golden Taraju', 'success');
+      addToast(res.message || 'Counter offer sent', 'success');
       // Update local state in requests
       setRequests((prev) =>
         prev.map((r) => (r.id === requestId || r._id === requestId ? res.request : r))
@@ -231,7 +278,7 @@ export const ShopDashboardPage = () => {
               </span>
             )}
             <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-amber-300 flex items-center gap-1 shadow-sm">
-              <span>⚖️</span> Golden Taraju Enabled
+              <span>⚖️</span> Bargaining Enabled
             </span>
           </div>
 
@@ -275,6 +322,44 @@ export const ShopDashboardPage = () => {
           if (cardId === 'pending-requests') setRequestFilter('PENDING');
         }}
       />
+
+      {/* LINKED SHOP NETWORK — same feed as customer dashboard */}
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-brand-600 font-bold text-xs uppercase tracking-wider mb-1">
+              <Store className="w-3.5 h-3.5" />
+              <span>Linked Customer-Facing Shops</span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              Shops Customers Can Order From
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5" data-network-summary>
+              Same live network as the customer dashboard near{' '}
+              <strong className="text-slate-700">{addressText}</strong> within {radiusKm} km —{' '}
+              {networkShops.length} shop{networkShops.length === 1 ? '' : 's'} linked.
+              Your store is highlighted; orders from any card route to that shop's inbox.
+            </p>
+          </div>
+          <button
+            onClick={() => fetchDashboardData(false)}
+            className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold self-start sm:self-auto"
+          >
+            Sync Shops
+          </button>
+        </div>
+        <div data-network-grid className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {networkLoading && <p className="text-xs text-slate-500">Loading linked shop network...</p>}
+          {!networkLoading && networkShops.length === 0 && (
+            <p className="text-xs text-slate-500 md:col-span-2 lg:col-span-3 text-center py-6 border border-dashed rounded-2xl">
+              No linked shops in this radius — widen the radius from the top location bar.
+            </p>
+          )}
+          {networkShops.map((netShop) => (
+            <NetworkShopCard key={netShop._id || netShop.id} netShop={netShop} shop={shop} />
+          ))}
+        </div>
+      </div>
 
       {/* FEATURE 1: Customer Product Requests & Live Inquiries Feed */}
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">

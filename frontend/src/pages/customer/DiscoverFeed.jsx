@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useLocation } from '../../context/LocationContext';
 import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
 import { shopService } from '../../services/shopService';
 import { productService } from '../../services/productService';
 import { chatService } from '../../services/chatService';
@@ -12,6 +13,10 @@ import { BroadcastRequestModal } from '../../components/customer/BroadcastReques
 import { ReservationModal } from '../../components/customer/ReservationModal';
 import { BargainModal } from '../../components/customer/BargainModal';
 import { getSehoreDemoData } from '../../components/customer/sehoreDemoData';
+import { getRoutedShopId, isUuidLike } from '../../components/customer/customerItemUtils';
+import { CompareProvider, useCompare } from '../../components/customer/CompareContext';
+import { ComparePanel } from '../../components/customer/ComparePanel';
+import { SmartSearch } from '../../components/customer/SmartSearch';
 import {
   Search,
   MapPin,
@@ -30,6 +35,8 @@ import {
   AlertTriangle,
   HandCoins,
   Pill,
+  Scale,
+  X,
 } from 'lucide-react';
 
 // Great-circle distance in km between two [lng, lat] points.
@@ -47,11 +54,15 @@ const haversineKm = (a, b) => {
 // Demo region anchor: VIT Bhopal University, Kothri Kalan (verified via OpenStreetMap).
 const DEMO_ANCHOR = [76.8498, 23.0755];
 
-export const DiscoverFeed = () => {
+// CompareProvider is mounted here — inside the customer folder only — so the
+// entire Compare feature (context, utils, panel) lives in components/customer.
+const DiscoverFeedInner = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { coordinates, addressText, radiusKm, setRadiusKm, setCoordinates, setAddressText } = useLocation();
   const { isAuthenticated, role } = useAuth();
+  const { addToast } = useNotification();
+  const { compareItems, compareCount, toggleCompare, isInCompare, clearCompare } = useCompare();
 
   const [activeTab, setActiveTab] = useState('shops'); // 'shops' | 'products'
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'map'
@@ -145,14 +156,23 @@ export const DiscoverFeed = () => {
         : [];
 
       if (shopRes.success) {
-        const customerShops = isSehoreSearch ? demoShops : shopRes.shops || [];
+        // LINKED SHOPS: live backend shops ALWAYS come first — they carry the
+        // real UUID shop_id the reservation API needs to route the hold to the
+        // correct shopkeeper. Demo catalogue shops are appended as extras (never
+        // replacing live rows), so "Hold & Reserve" stays working in every region.
+        const liveShops = shopRes.shops || [];
+        const liveIds = new Set(liveShops.map((s) => s._id || s.id));
+        const extraDemoShops = demoShops.filter((s) => !liveIds.has(s._id || s.id));
+        const customerShops = [...liveShops, ...extraDemoShops];
         setShops(customerShops);
         const reportedTotal = shopRes.totalRegisteredShops ?? shopRes.totalVerifiedShops ?? shopRes.totalShops ?? shopRes.shops?.length ?? 0;
-        setTotalShops(isSehoreSearch ? Math.max(6, demoShops.length) : Math.max(2, Number(reportedTotal) || 0, customerShops.length));
+        setTotalShops(Math.max(customerShops.length, Number(reportedTotal) || 0));
       }
       if (prodRes.success) {
         const apiProducts = prodRes.products || [];
-        setProducts(isSehoreSearch ? demoProducts : apiProducts);
+        const liveProductIds = new Set(apiProducts.map((p) => p._id || p.id));
+        const extraDemoProducts = demoProducts.filter((p) => !liveProductIds.has(p._id || p.id));
+        setProducts([...apiProducts, ...extraDemoProducts]);
       }
     } catch (err) {
       console.error('Error loading discover feed:', err);
@@ -219,9 +239,20 @@ export const DiscoverFeed = () => {
       navigate('/login');
       return;
     }
+    // Demo-catalogue rows route to the linked live partner shop, so chat works
+    // from every listing (same routing as holds/bargains).
+    const shopIdValue = getRoutedShopId(product);
+    if (!shopIdValue || !isUuidLike(shopIdValue)) {
+      addToast(
+        'This listing is not linked to a live shop chat yet. Broadcast a request to get quotes from nearby shops.',
+        'error',
+        6000
+      );
+      return;
+    }
     try {
       const res = await chatService.getOrCreateConversation({
-        shopId: product.shopId._id || product.shopId,
+        shopId: shopIdValue,
         productName: product.name,
         price: product.price,
       });
@@ -475,6 +506,19 @@ export const DiscoverFeed = () => {
           {/* Shops vs Products Tab */}
           <div className="flex items-center bg-slate-100 p-1 rounded-xl">
             <button
+              onClick={() => {
+                setActiveTab('smart');
+                setViewMode('grid');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-colors ${
+                activeTab === 'smart'
+                  ? 'bg-white text-brand-700 shadow-sm ring-1 ring-brand-200'
+                  : 'text-brand-700 bg-brand-50 hover:bg-brand-100'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" /> Smart Search
+            </button>
+            <button
               onClick={() => setActiveTab('shops')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-colors ${
                 activeTab === 'shops'
@@ -508,6 +552,26 @@ export const DiscoverFeed = () => {
               <Pill className="w-3.5 h-3.5" /> Medical
             </button>
             <button
+              onClick={() => setActiveTab('compare')}
+              aria-label={`Compare selected products (${compareCount} selected)`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-colors ${
+                activeTab === 'compare'
+                  ? 'bg-white text-brand-700 shadow-sm ring-1 ring-brand-200'
+                  : compareCount > 0
+                  ? 'text-brand-700 bg-brand-50 hover:bg-brand-100'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Scale className="w-3.5 h-3.5" /> Compare
+              <span
+                className={`min-w-[1.25rem] px-1 py-0.5 rounded-full text-[10px] font-black text-center ${
+                  compareCount > 0 ? 'bg-brand-600 text-white' : 'bg-slate-200 text-slate-500'
+                }`}
+              >
+                {compareCount}
+              </span>
+            </button>
+            <button
               onClick={() => setActiveTab('products')}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-amber-700 hover:bg-amber-50"
             >
@@ -515,7 +579,8 @@ export const DiscoverFeed = () => {
             </button>
           </div>
 
-          {/* Right Toolbar: View Toggle & Sort */}
+          {/* Right Toolbar: View Toggle & Sort (not applicable to rule-based smart search) */}
+          {activeTab !== 'smart' && (
           <div className="flex items-center gap-3">
             {refreshing && (
               <span className="flex items-center gap-1.5 text-brand-600 font-semibold">
@@ -559,11 +624,19 @@ export const DiscoverFeed = () => {
               </button>
             </div>
           </div>
+          )}
         </div>
       </div>
 
       {/* Main Content Area */}
-      {viewMode === 'map' ? (
+      {activeTab === 'smart' ? (
+        <SmartSearch />
+      ) : activeTab === 'compare' ? (
+        <ComparePanel
+          onBrowse={() => setActiveTab('products')}
+          onReserve={(offer) => setReserveTarget(offer)}
+        />
+      ) : viewMode === 'map' ? (
         <div className="space-y-4">
           <MapView
             userCoords={coordinates}
@@ -653,12 +726,41 @@ export const DiscoverFeed = () => {
                   onReserveClick={(p) => setReserveTarget(p)}
                   onChatClick={handleChatWithProduct}
                   onBargain={handleBargain}
+                  onCompareToggle={toggleCompare}
+                  isCompared={isInCompare(product._id || product.id)}
                   medicalMode={activeTab === 'medical'}
                 />
               ))}
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Floating compare tray (persistent access, cart-bar style) */}
+      {compareCount > 0 && activeTab !== 'compare' && (
+        <div className="sticky bottom-4 z-30 flex justify-center px-4">
+          <div className="bg-slate-900 text-white rounded-2xl shadow-xl border border-slate-700 px-4 py-2.5 flex items-center gap-3 max-w-full">
+            <Scale className="w-4 h-4 text-brand-400 flex-shrink-0" />
+            <span className="text-xs font-bold whitespace-nowrap hidden sm:inline">
+              {compareCount} offer{compareCount === 1 ? '' : 's'} selected
+            </span>
+            <span className="text-xs font-bold sm:hidden">{compareCount}</span>
+            <button
+              onClick={() => setActiveTab('compare')}
+              className="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md shadow-brand-500/20 transition-colors whitespace-nowrap"
+            >
+              Compare Selected
+            </button>
+            <button
+              onClick={clearCompare}
+              aria-label="Clear comparison selection"
+              title="Clear comparison selection"
+              className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -693,3 +795,9 @@ export const DiscoverFeed = () => {
       </div>
   );
 };
+
+export const DiscoverFeed = () => (
+  <CompareProvider>
+    <DiscoverFeedInner />
+  </CompareProvider>
+);

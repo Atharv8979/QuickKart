@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { authService } from '../../services/authService';
 import { useNotification } from '../../context/NotificationContext';
+import { CustomerProfilePhoto } from '../../components/customer/CustomerProfilePhoto';
 import { User, Mail, Phone, MapPin, Save, CheckCircle2 } from 'lucide-react';
 
 export const CustomerProfilePage = () => {
@@ -24,12 +25,17 @@ export const CustomerProfilePage = () => {
         phone,
         address: { street, city, pincode },
       });
-      if (res.success) {
+      if (res?.success) {
         updateUser(res.user);
         addToast('Profile updated successfully!', 'success');
+      } else {
+        addToast(res?.message || 'Failed to update profile', 'error');
       }
     } catch (err) {
-      addToast('Failed to update profile', 'error');
+      addToast(
+        err?.response?.data?.message || err?.message || 'Failed to update profile',
+        'error'
+      );
     } finally {
       setSaving(false);
     }
@@ -51,6 +57,8 @@ export const CustomerProfilePage = () => {
           </p>
         </div>
       </div>
+
+      <CustomerProfilePhoto />
 
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
         <form onSubmit={handleSave} className="space-y-4">

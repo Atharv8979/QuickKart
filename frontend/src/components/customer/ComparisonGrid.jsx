@@ -3,13 +3,19 @@ import { Star, MapPin, Clock, MessageSquare, ShoppingBag, CheckCircle2, Sparkles
 import { Badge } from '../common/Badge';
 
 export const ComparisonGrid = ({ request, responses = [], onChat, onReserve }) => {
+  const requestTitle = request?.productName || 'your request';
+  const requestedQuantity = request?.quantity ?? '—';
+  const requestedUnit = request?.unit || 'unit';
+
   if (!responses.length) {
     return (
       <div className="bg-slate-50 border border-dashed border-slate-300 rounded-2xl p-8 text-center">
-        <Clock className="w-8 h-8 text-slate-400 mx-auto mb-2 animate-spin" />
+        {/* Static icon: this is a waiting state, not a progress indicator — a
+            perpetual spinner would falsely imply offers are actively loading. */}
+        <Clock className="w-8 h-8 text-slate-400 mx-auto mb-2" />
         <h4 className="font-bold text-slate-700 text-sm">Waiting for Shopkeeper Offers...</h4>
         <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
-          Your request for "{request.productName}" has been broadcast to nearby shops. Offers usually arrive within a few minutes!
+          Your request for "{requestTitle}" has been broadcast to nearby shops. Offers usually arrive within a few minutes!
         </p>
       </div>
     );
@@ -31,10 +37,10 @@ export const ComparisonGrid = ({ request, responses = [], onChat, onReserve }) =
             Live Comparison Grid (Fig 10.2)
           </span>
           <h3 className="text-lg font-black text-slate-900 leading-tight">
-            Request: "{request.productName}"
+            Request: "{requestTitle}"
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Quantity: {request.quantity} {request.unit} • {responses.length} shops responded
+            Quantity: {requestedQuantity} {requestedUnit} • {responses.length} shops responded
           </p>
         </div>
 
@@ -51,6 +57,11 @@ export const ComparisonGrid = ({ request, responses = [], onChat, onReserve }) =
           const isAvailable = item.availabilityStatus === 'available';
           const isAlternative = item.availabilityStatus === 'available_alternative';
           const isNotAvailable = item.availabilityStatus === 'not_available';
+          // Missing ratings/distances are disclosed, never guessed.
+          const shopRatingValue = shop?.rating != null ? Number(shop.rating) : NaN;
+          const hasShopRating = Number.isFinite(shopRatingValue);
+          const distanceValue = item.distanceKm != null ? Number(item.distanceKm) : NaN;
+          const hasDistance = Number.isFinite(distanceValue);
 
           return (
             <div
@@ -127,7 +138,7 @@ export const ComparisonGrid = ({ request, responses = [], onChat, onReserve }) =
                       <MapPin className="w-3.5 h-3.5 text-brand-600" /> Distance:
                     </span>
                     <span className="font-bold text-slate-800">
-                      {item.distanceKm ? `${item.distanceKm.toFixed(1)} km away` : 'Nearby'}
+                      {hasDistance ? `${distanceValue.toFixed(1)} km away` : 'Distance not available'}
                     </span>
                   </div>
 
@@ -136,7 +147,7 @@ export const ComparisonGrid = ({ request, responses = [], onChat, onReserve }) =
                       <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" /> Rating:
                     </span>
                     <span className="font-bold text-slate-800">
-                      {shop?.rating?.toFixed(1) || '4.5'}★ ({shop?.reviewCount || 0})
+                      {hasShopRating ? `${shopRatingValue.toFixed(1)}★ (${shop?.reviewCount || 0})` : 'No ratings yet'}
                     </span>
                   </div>
                 </div>
@@ -144,7 +155,7 @@ export const ComparisonGrid = ({ request, responses = [], onChat, onReserve }) =
                 {/* Action Buttons: Chat • Reserve */}
                 <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                   <button
-                    onClick={() => onChat(item)}
+                    onClick={() => onChat?.(item)}
                     className="flex-1 py-2 text-center text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors flex items-center justify-center gap-1"
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
@@ -152,7 +163,7 @@ export const ComparisonGrid = ({ request, responses = [], onChat, onReserve }) =
                   </button>
 
                   <button
-                    onClick={() => onReserve(item)}
+                    onClick={() => onReserve?.(item)}
                     disabled={isNotAvailable}
                     className={`flex-1 py-2 text-center text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1 shadow-sm ${
                       isBestValue
