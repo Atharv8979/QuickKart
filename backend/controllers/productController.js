@@ -81,6 +81,14 @@ export const getProducts = async (req, res, next) => {
     }
 
     let filtered = FALLBACK_PRODUCTS;
+    if (shopId) {
+      const target = String(shopId);
+      filtered = filtered.filter((p) => {
+        const owner = p.shopId;
+        const ownerId = owner && typeof owner === 'object' ? owner._id || owner.id : owner;
+        return String(ownerId || '') === target;
+      });
+    }
     if (category && category !== 'All') filtered = filtered.filter((p) => p.category === category);
     if (search) filtered = filtered.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()));
 

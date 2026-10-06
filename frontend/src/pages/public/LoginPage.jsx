@@ -32,16 +32,19 @@ export const LoginPage = () => {
     setLoading(true);
     try {
       const res = await login(email, password);
-      if (res.success) {
+      if (res?.success) {
         addToast(`Welcome back, ${res.user.name}!`, 'success');
         if (res.user.role === 'shopkeeper') navigate('/shop/dashboard');
         else if (res.user.role === 'admin') navigate('/admin/dashboard');
         else navigate('/customer/search');
       } else {
-        addToast(res.message || 'Invalid credentials', 'error');
+        addToast(res?.message || 'Invalid credentials', 'error');
       }
     } catch (err) {
-      addToast('Login failed', 'error');
+      addToast(
+        err?.response?.data?.message || err?.message || 'Login failed. Please try again.',
+        'error'
+      );
     } finally {
       setLoading(false);
     }
@@ -138,9 +141,17 @@ export const LoginPage = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-              Password
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                Password
+              </label>
+              <Link
+                to="/forgot-password"
+                className="text-[11px] font-bold text-brand-600 hover:text-brand-800 hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input

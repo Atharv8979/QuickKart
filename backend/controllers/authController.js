@@ -1,7 +1,17 @@
+import crypto from 'crypto';
 import { supabase } from '../config/supabase.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { FALLBACK_SHOPS } from '../utils/fallbackData.js';
+import { sendPasswordResetCodeEmail, sendPasswordChangedEmail } from '../utils/emailService.js';
+import {
+  createCode,
+  getLatestCode,
+  incrementAttempts,
+  markCodeUsed,
+  invalidateAllCodes,
+} from '../utils/passwordResetStore.js';
+
 
 const getJwtSecret = () => process.env.JWT_SECRET || 'quickkart_jwt_secret_key_2026_super_secure';
 
@@ -342,6 +352,330 @@ export const updateProfile = async (req, res, next) => {
   }
 };
 
+// ============================================================================
+//  PASSWORD RESET (Email OTP) FLOW
+//    Step 1  POST /api/auth/forgot-password     { email }
+//    Step 2  POST /api/auth/verify-reset-code   { email, code }  -> resetToken
+//    Step 3  POST /api/auth/reset-password      { resetToken, newPassword }
+//
+//  Security properties:
+//    * The 6-digit code is generated with a CSPRNG and stored ONLY as a bcrypt
+//      hash - the plaintext never touches the database.
+//    * Codes expire (RESET_CODE_TTL_MINUTES, default 10) and allow a limited
+//      number of guesses (RESET_MAX_ATTEMPTS, default 5) before being voided.
+//    * Requesting a new code immediately voids every previously issued code.
+//    * /forgot-password always answers identically, so it cannot be used to
+//      discover which addresses have accounts (no user enumeration).
+//    * The reset token embeds a fingerprint of the account's current password
+//      hash, so it stops working the instant the password changes. That makes
+//      it genuinely single-use without needing any extra storage.
+// ============================================================================
+
+const isProduction = () => process.env.NODE_ENV === 'production';
+
+const resetCodeTtlMinutes = () => Number(process.env.RESET_CODE_TTL_MINUTES || 10);
+const resetResendCooldownSeconds = () => Number(process.env.RESET_RESEND_COOLDOWN_SECONDS || 60);
+const resetMaxAttempts = () => Number(process.env.RESET_MAX_ATTEMPTS || 5);
+const resetTokenTtlMinutes = () => Number(process.env.RESET_TOKEN_TTL_MINUTES || 15);
+
+const GENERIC_RESET_MESSAGE =
+  'If an account exists for that email, a 6-digit reset code has been sent. Please check your inbox (and spam folder).';
+
+const isValidEmail = (value) =>
+  typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
+
+const generateResetCode = () => String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+
+// Short fingerprint of the current password hash -> makes reset tokens single-use.
+const passwordFingerprint = (passwordHash) =>
+  crypto.createHash('sha256').update(String(passwordHash || '')).digest('hex').slice(0, 24);
+
+const generateResetToken = (userId, email, fingerprint) =>
+  jwt.sign(
+    { id: userId, email, pv: fingerprint, purpose: 'password_reset' },
+    getJwtSecret(),
+    { expiresIn: `${resetTokenTtlMinutes()}m` }
+  );
+
+const findUserForReset = async (email) => {
+  if (!supabase) return null;
+  const { data } = await supabase
+    .from('users')
+    .select('id, name, email, status, password_hash')
+    .eq('email', email)
+    .maybeSingle();
+  return data || null;
+};
+
+// @desc    Request a password reset code by email
+// @route   POST /api/auth/forgot-password
+// @access  Public
+export const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ success: false, message: 'Please provide a valid email address' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const cooldown = resetResendCooldownSeconds();
+    const ttlMinutes = resetCodeTtlMinutes();
+
+    // Anti-spam: at most one active code per email, resendable after the cooldown.
+    // A record is created even for unknown emails so the response time and status
+    // stay identical and the endpoint cannot be used to enumerate accounts.
+    const existing = await getLatestCode(normalizedEmail);
+    if (existing && !existing.used_at) {
+      const ageSeconds = Math.floor((Date.now() - new Date(existing.created_at).getTime()) / 1000);
+      if (ageSeconds < cooldown) {
+        return res.status(429).json({
+          success: false,
+          message: `A reset code was just sent. Please wait ${cooldown - ageSeconds}s before requesting another.`,
+          retryAfter: cooldown - ageSeconds,
+        });
+      }
+    }
+
+    const user = await findUserForReset(normalizedEmail);
+    const code = generateResetCode();
+    const salt = await bcrypt.genSalt(10);
+    const codeHash = await bcrypt.hash(code, salt);
+
+    await createCode({
+      email: normalizedEmail,
+      codeHash,
+      ttlMinutes,
+      maxAttempts: resetMaxAttempts(),
+      requestIp: req.ip,
+    });
+
+    // Only actually mail the code when the account exists and is usable.
+    // In resilient (no-database) mode there is nothing to look up, so the request
+    // is treated as valid and the code is surfaced to the console/dev response.
+    const deliverable = !supabase ? true : Boolean(user) && user.status !== 'suspended';
+    let delivery = { sent: false, via: 'none' };
+
+    if (deliverable) {
+      delivery = await sendPasswordResetCodeEmail({
+        to: user?.email || normalizedEmail,
+        name: user?.name,
+        code,
+        ttlMinutes,
+      });
+    }
+
+    const payload = {
+      success: true,
+      message: GENERIC_RESET_MESSAGE,
+      expiresInMinutes: ttlMinutes,
+      resendAfterSeconds: cooldown,
+    };
+
+    // Local/demo convenience ONLY. In production the code is never returned,
+    // so this endpoint cannot be abused to hijack an account.
+    if (!isProduction() && deliverable && delivery.via !== 'smtp') {
+      payload.devCode = code;
+      payload.devNotice =
+        'SMTP is not configured (or sending failed), so the code is returned here for development only.';
+    }
+
+    return res.json(payload);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Verify the 6-digit code and issue a short-lived reset token
+// @route   POST /api/auth/verify-reset-code
+// @access  Public
+export const verifyResetCode = async (req, res, next) => {
+  try {
+    const { email, code } = req.body;
+
+    if (!isValidEmail(email) || code === undefined || code === null || code === '') {
+      return res.status(400).json({ success: false, message: 'Please provide your email and the 6-digit code' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const submitted = String(code).replace(/\D/g, '');
+    const invalidMessage = 'Invalid or expired reset code. Please request a new one.';
+
+    if (submitted.length !== 6) {
+      return res.status(400).json({ success: false, message: 'The reset code must be exactly 6 digits' });
+    }
+
+    const record = await getLatestCode(normalizedEmail);
+
+    // Unknown email / already-used code -> identical generic error.
+    if (!record || record.used_at) {
+      return res.status(400).json({ success: false, message: invalidMessage });
+    }
+
+    if (new Date(record.expires_at).getTime() < Date.now()) {
+      await invalidateAllCodes(normalizedEmail);
+      return res.status(400).json({ success: false, message: 'This reset code has expired. Please request a new one.' });
+    }
+
+    const maxAttempts = record.max_attempts || resetMaxAttempts();
+
+    if ((record.attempts || 0) >= maxAttempts) {
+      await invalidateAllCodes(normalizedEmail);
+      return res.status(429).json({ success: false, message: 'Too many incorrect attempts. Please request a new code.' });
+    }
+
+    // bcrypt.compare is constant-time, so the code cannot be brute-forced by timing.
+    const isMatch = await bcrypt.compare(submitted, record.code_hash);
+
+    if (!isMatch) {
+      const attempts = await incrementAttempts(record);
+      const remaining = Math.max(0, maxAttempts - attempts);
+
+      if (remaining <= 0) {
+        await invalidateAllCodes(normalizedEmail);
+        return res.status(429).json({ success: false, message: 'Too many incorrect attempts. Please request a new code.' });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: `Incorrect code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`,
+        attemptsRemaining: remaining,
+      });
+    }
+
+    // Re-read the account server-side; never trust the submitted email alone.
+    const user = await findUserForReset(normalizedEmail);
+
+    if (!user) {
+      // With a live database an unknown address is a hard failure. Without one,
+      // QuickKart is in resilient demo mode and the flow is allowed to continue.
+      if (supabase) {
+        await invalidateAllCodes(normalizedEmail);
+        return res.status(400).json({ success: false, message: invalidMessage });
+      }
+    } else if (user.status === 'suspended') {
+      await invalidateAllCodes(normalizedEmail);
+      return res.status(403).json({ success: false, message: 'Account has been suspended by administration' });
+    }
+
+    // Consume the code and hand back a short-lived, single-use reset token.
+    await markCodeUsed(record);
+
+    const accountId = user?.id || 'a0000000-0000-0000-0000-000000000099';
+    const accountEmail = user?.email || normalizedEmail;
+
+    return res.json({
+      success: true,
+      message: 'Code verified. Please choose a new password.',
+      resetToken: generateResetToken(accountId, accountEmail, passwordFingerprint(user?.password_hash)),
+      expiresInMinutes: resetTokenTtlMinutes(),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Set a new password using a verified reset token
+// @route   POST /api/auth/reset-password
+// @access  Public (requires a valid resetToken from /verify-reset-code)
+export const resetPassword = async (req, res, next) => {
+  try {
+    const { resetToken, newPassword, confirmPassword } = req.body;
+    const restartMessage = 'This reset session has expired. Please request a new code.';
+
+    if (!resetToken || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Reset token and new password are required' });
+    }
+
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long' });
+    }
+
+    // bcrypt only considers the first 72 bytes of input.
+    if (Buffer.byteLength(newPassword, 'utf8') > 72) {
+      return res.status(400).json({ success: false, message: 'Password must be 72 characters or fewer' });
+    }
+
+    if (confirmPassword !== undefined && confirmPassword !== newPassword) {
+      return res.status(400).json({ success: false, message: 'Passwords do not match' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(resetToken, getJwtSecret());
+    } catch {
+      return res.status(400).json({ success: false, message: restartMessage });
+    }
+
+    if (!decoded || decoded.purpose !== 'password_reset' || !decoded.id) {
+      return res.status(400).json({ success: false, message: restartMessage });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(newPassword, salt);
+
+    if (supabase) {
+      const { data: current } = await supabase
+        .from('users')
+        .select('id, name, email, status, password_hash')
+        .eq('id', decoded.id)
+        .maybeSingle();
+
+      if (!current) {
+        return res.status(400).json({ success: false, message: restartMessage });
+      }
+
+      if (current.status === 'suspended') {
+        return res.status(403).json({ success: false, message: 'Account has been suspended by administration' });
+      }
+
+      // Single-use guard: the token carries a fingerprint of the password hash
+      // as it was at verification time. Once the password changes, replaying the
+      // same token no longer matches and is rejected.
+      if (decoded.pv !== undefined && decoded.pv !== passwordFingerprint(current.password_hash)) {
+        return res.status(400).json({
+          success: false,
+          message: 'This reset link has already been used. Please sign in with your new password.',
+        });
+      }
+
+      const { error } = await supabase
+        .from('users')
+        .update({ password_hash: passwordHash, updated_at: new Date().toISOString() })
+        .eq('id', current.id);
+
+      if (error) throw error;
+
+      const email = current.email || decoded.email;
+
+      // Burn every outstanding code for this account.
+      await invalidateAllCodes(email);
+
+      // Non-blocking security notification.
+      sendPasswordChangedEmail({ to: email, name: current.name }).catch(() => {});
+
+      return res.json({
+        success: true,
+        message: 'Password reset successful. You can now sign in with your new password.',
+        email,
+      });
+    }
+
+    // Fallback mode without a database: nothing persistent to update.
+    await invalidateAllCodes(decoded.email || '');
+
+    return res.json({
+      success: true,
+      message: 'Password reset successful. You can now sign in with your new password.',
+      email: decoded.email,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Aliases for backwards compatibility
 export const registerUser = register;
 export const loginUser = login;
+
+

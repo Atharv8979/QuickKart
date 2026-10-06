@@ -1,5 +1,5 @@
 import { supabase } from '../config/supabase.js';
-import { FALLBACK_CUSTOMER_REQUESTS, FALLBACK_PRODUCTS, FALLBACK_RESERVATIONS } from '../utils/fallbackData.js';
+import { FALLBACK_CUSTOMER_REQUESTS, FALLBACK_PRODUCTS, FALLBACK_RESERVATIONS, FALLBACK_SHOPS } from '../utils/fallbackData.js';
 
 // @desc    Broadcast structured request to nearby shops
 // @route   POST /api/requests
@@ -52,11 +52,14 @@ export const createRequest = async (req, res, next) => {
       });
     }
 
-    // Fallback response
+    // Fallback response (persist in-memory so linked shopkeeper inbox sees it)
+    const newId = 'req_' + Date.now();
     const mockRequest = {
-      _id: 'req_' + Date.now(),
-      id: 'req_' + Date.now(),
+      _id: newId,
+      id: newId,
       customerId: req.user.id,
+      customerName: req.user.name || 'Walk-in Customer',
+      customerPhone: req.user.phone || '',
       productName,
       category,
       quantity: parseInt(quantity) || 1,
@@ -66,7 +69,23 @@ export const createRequest = async (req, res, next) => {
       notes,
       status: 'ACTIVE',
       createdAt: new Date().toISOString(),
+      responses: [],
+      negotiationHistory: [],
     };
+
+    FALLBACK_CUSTOMER_REQUESTS.unshift(mockRequest);
+
+    // Real-time broadcast so linked shopkeeper dashboards refresh instantly
+    const ioFallback = req.app.get('io');
+    if (ioFallback) {
+      ioFallback.emit('new_broadcast_request', {
+        requestId: mockRequest._id,
+        productName: mockRequest.productName,
+        category: mockRequest.category,
+        quantity: mockRequest.quantity,
+        unit: mockRequest.unit,
+      });
+    }
 
     res.status(201).json({
       success: true,
@@ -130,12 +149,12 @@ export const getMyRequests = async (req, res, next) => {
       }
     }
 
-    // Fallback sample data
-    res.json({
-      success: true,
-      count: 1,
-      requests: [
-        {
+    // Linked fallback: return this customer's own newly-created broadcasts plus sample
+    const mine = (FALLBACK_CUSTOMER_REQUESTS || []).filter(
+      (r) => (r.customerId || r.customer_id) === req.user.id
+    );
+    // Fallback sample data (seed + this customer's newly-created linked orders first)
+    const sample = {
           _id: 'sample_req_1',
           id: 'sample_req_1',
           productName: '10 meters of 1-inch PVC Pipe',
@@ -163,8 +182,12 @@ export const getMyRequests = async (req, res, next) => {
               },
             },
           ],
-        },
-      ],
+        };
+    const combined = [...mine, sample];
+    res.json({
+      success: true,
+      count: combined.length,
+      requests: combined,
     });
   } catch (error) {
     next(error);
@@ -425,11 +448,29 @@ export const getShopRelevantRequests = async (req, res, next) => {
       }
     }
 
+    // Linked fallback: broadcast requests are category-routed to the logged-in
+    // shopkeeper's own shop category (same category vocabulary the customer
+    // dashboard broadcasts with), plus anything freshly created this session.
+    // This keeps Sharma (Hardware) from seeing Medical/Stationery noise while
+    // still guaranteeing a new customer order appears instantly.
+    const ownedShop = (FALLBACK_SHOPS || []).find((s) => s.owner_id === req.user.id);
+    const ownedCategory = ownedShop?.category || null;
+    const freshIds = new Set(
+      (FALLBACK_CUSTOMER_REQUESTS || [])
+        .filter((r) => String(r._id || r.id || '').startsWith('req_'))
+        .map((r) => r._id || r.id)
+    );
+    const scoped = (FALLBACK_CUSTOMER_REQUESTS || []).filter((r) => {
+      if (freshIds.has(r._id || r.id)) return true; // just created -> visible to all linked shops
+      if (!ownedCategory) return true;
+      return (r.category || '') === ownedCategory;
+    });
+
     // Resilient in-memory fallback with rich Golden Taraju requests
     res.json({
       success: true,
-      count: FALLBACK_CUSTOMER_REQUESTS.length,
-      requests: FALLBACK_CUSTOMER_REQUESTS,
+      count: scoped.length,
+      requests: scoped,
     });
   } catch (error) {
     next(error);
@@ -511,7 +552,7 @@ export const bargainRequest = async (req, res, next) => {
 
     res.json({
       success: true,
-      message: 'Counter offer submitted via Golden Taraju',
+      message: 'Counter offer submitted',
       request: reqItem,
     });
   } catch (error) {

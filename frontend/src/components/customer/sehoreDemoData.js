@@ -79,6 +79,9 @@ const product = (id, name, brand, category, price, mrp, unit, stock, shop, image
   isAvailable: stockStatus !== 'out_of_stock', stockStatus, images: [imageByCategory[imageKey]],
   shopId: shop, rating: shop.rating, reviewCount: shop.reviewCount,
   deliveryAvailable: shop.deliveryAvailable, deliveryEtaMinutes: shop.deliveryEtaMinutes,
+  // Explicit marker so every customer component can label this row as demo
+  // content instead of presenting it as a live database listing.
+  isDemo: true,
 });
 
 const products = [
@@ -144,6 +147,9 @@ shops.forEach((shop) => {
   shop.topProducts = items.slice(0, 4);
   shop.availableItemCount = items.filter((item) => item.isAvailable !== false).length;
   shop.lowStockItemCount = items.filter((item) => item.stockStatus === 'low_stock').length;
+  // These six shops are local fixtures — flag them so the UI shows a
+  // "Demo shop" chip instead of a real-business "Verified" badge.
+  shop.isDemo = true;
 });
 
 export const getSehoreDemoData = () => ({ shops, products });

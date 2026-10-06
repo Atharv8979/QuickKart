@@ -9,6 +9,7 @@ import { checkSupabaseConnection } from './config/supabase.js';
 import { startReservationExpiryWorker } from './utils/reservationExpiry.js';
 import { initializeSocket } from './sockets/socketHandler.js';
 import { errorHandler } from './middlewares/errorMiddleware.js';
+import { isEmailConfigured } from './utils/emailService.js';
 
 // Route imports
 import authRoutes from './routes/authRoutes.js';
@@ -38,6 +39,10 @@ app.set('io', io);
 initializeSocket(io);
 
 // Middlewares
+// Render (and most PaaS) terminate TLS in front of the app, so the real client
+// IP only exists in X-Forwarded-For. Trusting the first hop makes req.ip
+// accurate, which is what the rate limiters and the reset-code audit trail use.
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -50,6 +55,32 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+
+// Password reset is stricter: every request either sends an email or consumes
+// one of the limited OTP verification attempts.
+const passwordResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many password reset requests from this IP. Please try again in a few minutes.',
+  },
+});
+const resetVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many verification attempts from this IP. Please try again later.',
+  },
+});
+app.use('/api/auth/forgot-password', passwordResetLimiter);
+app.use('/api/auth/verify-reset-code', resetVerifyLimiter);
+app.use('/api/auth/reset-password', resetVerifyLimiter);
 
 // Root & API Health Check
 app.get('/', (req, res) => {
@@ -142,6 +173,16 @@ const startServer = async () => {
       console.log(`  🚀 QuickKart Backend API Server running on port ${PORT}`);
       console.log(`  📍 Hyperlocal Product Discovery & Connectivity Ready`);
       console.log(`====================================================`);
+
+      // Password reset codes are delivered by email. Without SMTP credentials
+      // they can only be written to this log, so shout about it on boot.
+      if (!isEmailConfigured()) {
+        console.warn(
+          '[Email] SMTP is NOT configured (SMTP_USER / SMTP_PASS missing).\n' +
+            '        Password reset codes will be printed to this log instead of emailed.\n' +
+            '        Set SMTP_USER + SMTP_PASS (Gmail App Password) to enable delivery.'
+        );
+      }
     });
   } catch (error) {
     console.error('Failed to start server:', error);

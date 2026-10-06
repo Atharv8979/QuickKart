@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal } from '../common/Modal';
 import { useLocation } from '../../context/LocationContext';
 import { requestService } from '../../services/requestService';
@@ -26,7 +26,19 @@ export const BroadcastRequestModal = ({ isOpen, onClose, onSuccess, initialProdu
     'Stationery & Office',
     'Groceries & Daily Essentials',
     'Electronics & Mobiles',
+    'Medicines & Wellness',
   ];
+
+  // The modal stays mounted while the parent page is open, so the prefill from
+  // props must be re-applied every time it opens (otherwise the form keeps the
+  // values from the first time it was opened, ignoring later search/category
+  // changes on the dashboard).
+  useEffect(() => {
+    if (isOpen) {
+      setProductName(initialProduct || '');
+      setCategory(initialCategory || 'Hardware & Tools');
+    }
+  }, [isOpen, initialProduct, initialCategory]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -50,7 +62,7 @@ export const BroadcastRequestModal = ({ isOpen, onClose, onSuccess, initialProdu
         searchRadiusKm: searchRadius,
       });
 
-      if (res.success) {
+      if (res?.success) {
         addToast(
           `🚀 Broadcast sent to ${res.broadcastShopCount || 'nearby'} shops! You'll receive quotes shortly.`,
           'success',
@@ -58,6 +70,10 @@ export const BroadcastRequestModal = ({ isOpen, onClose, onSuccess, initialProdu
         );
         onClose();
         if (onSuccess) onSuccess(res.request);
+      } else {
+        // The API answered without throwing but refused the request — never
+        // leave the customer staring at a modal that silently did nothing.
+        addToast(res?.message || 'The broadcast could not be sent. Please try again.', 'error');
       }
     } catch (err) {
       addToast(err.response?.data?.message || 'Failed to broadcast request', 'error');

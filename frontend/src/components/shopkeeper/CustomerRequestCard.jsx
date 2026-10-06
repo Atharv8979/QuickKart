@@ -269,11 +269,11 @@ export const CustomerRequestCard = ({
               Accept ₹{customerOffer}
             </button>
 
-            {/* Golden Taraju Bargain Button */}
+            {/* Bargain Button */}
             <button
               onClick={() => onBargain && onBargain(request)}
               disabled={actionLoading}
-              title="Open Golden Taraju Bargaining Interface"
+              title="Open Bargaining Interface"
               className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black text-xs shadow-md shadow-amber-500/25 transition-all flex items-center justify-center gap-1.5 hover:scale-[1.02] active:scale-[0.98]"
             >
               <span className="text-sm">⚖️</span>
