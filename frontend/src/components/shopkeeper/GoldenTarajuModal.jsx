@@ -162,7 +162,7 @@ export const GoldenTarajuModal = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-black tracking-tight text-slate-950 flex items-center gap-1.5">
-                  Golden Taraju™
+                  Bargaining Desk™
                 </h2>
                 <span className="bg-slate-950 text-amber-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full tracking-wider">
                   Live Negotiation
@@ -217,7 +217,7 @@ export const GoldenTarajuModal = ({
         <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-slate-50/50 min-h-[220px] max-h-[340px]">
           <div className="text-center my-1">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-white px-3 py-1 rounded-full border border-slate-200">
-              Golden Taraju Session Opened
+              Bargaining Session Opened
             </span>
           </div>
 

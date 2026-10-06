@@ -33,15 +33,18 @@ export const RegisterPage = () => {
         role,
       });
 
-      if (res.success) {
+      if (res?.success) {
         addToast(`Account created as ${role}!`, 'success');
         if (role === 'shopkeeper') navigate('/shop/dashboard');
         else navigate('/customer/search');
       } else {
-        addToast(res.message || 'Registration failed', 'error');
+        addToast(res?.message || 'Registration failed', 'error');
       }
     } catch (err) {
-      addToast('Registration failed', 'error');
+      addToast(
+        err?.response?.data?.message || err?.message || 'Registration failed. Please try again.',
+        'error'
+      );
     } finally {
       setLoading(false);
     }
