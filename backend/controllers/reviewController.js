@@ -24,7 +24,7 @@ export const createReview = async (req, res, next) => {
           {
             shop_id: targetShopId,
             customer_id: req.user.id,
-            rating: parseInt(rating) || 5,
+            rating: parseInt(rating),
             comment,
             tags: tags || [],
           },
@@ -65,10 +65,12 @@ export const getShopReviews = async (req, res, next) => {
     const { shopId } = req.params;
 
     if (supabase) {
+      // Fetch reviews with customer details
       const { data: reviews, error } = await supabase
         .from('reviews')
-        .select('*')
-        .eq('shop_id', shopId);
+        .select('*, customer:users (id, name)')
+        .eq('shop_id', shopId)
+        .order('created_at', { ascending: false });
 
       if (!error && reviews) {
         return res.json({
@@ -80,14 +82,7 @@ export const getShopReviews = async (req, res, next) => {
 
     res.json({
       success: true,
-      reviews: [
-        {
-          id: 'rev_sample',
-          rating: 5,
-          comment: 'Excellent shop, always has parts in stock!',
-          created_at: new Date().toISOString(),
-        },
-      ],
+      reviews: [],
     });
   } catch (error) {
     next(error);
