@@ -308,11 +308,13 @@ export const RegionalSalesRankingSection = ({ shopId }) => {
                       </span>
                     </td>
 
-                    {/* My Shop Stock */}
+                    {/* My Shop Stock — honest about products not listed */}
                     <td className="py-3.5 px-4 text-center">
                       <span
                         className={`inline-flex items-center gap-1 text-xs font-black px-2.5 py-1 rounded-full border ${
-                          isOutOfStock
+                          item.inMyCatalog === false
+                            ? 'bg-slate-50 text-slate-500 border-slate-200'
+                            : isOutOfStock
                             ? 'bg-red-50 text-red-700 border-red-200'
                             : isLowStock
                             ? 'bg-amber-50 text-amber-700 border-amber-200'
@@ -321,14 +323,16 @@ export const RegionalSalesRankingSection = ({ shopId }) => {
                       >
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${
-                            isOutOfStock
+                            item.inMyCatalog === false
+                              ? 'bg-slate-400'
+                              : isOutOfStock
                               ? 'bg-red-500'
                               : isLowStock
                               ? 'bg-amber-500 animate-pulse'
                               : 'bg-emerald-500'
                           }`}
                         />
-                        {item.myShopStock} in stock
+                        {item.inMyCatalog === false ? 'Not listed' : `${item.myShopStock} in stock`}
                       </span>
                     </td>
 

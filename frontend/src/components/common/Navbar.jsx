@@ -78,8 +78,9 @@ export const Navbar = () => {
             </div>
           </Link>
 
-          {/* Location Selector Pill */}
-          <div className="relative hidden md:block" ref={locationRef}>
+          {/* Location Selector Pill - only for customers and unauthenticated users */}
+          {role !== 'shopkeeper' && (
+            <div className="relative hidden md:block" ref={locationRef}>
             <button
               onClick={() => setIsLocationOpen(!isLocationOpen)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100/90 hover:bg-slate-200/80 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors max-w-[220px]"
@@ -154,6 +155,7 @@ export const Navbar = () => {
               </div>
             )}
           </div>
+        )}
 
           {/* Navigation Links based on Role */}
           <nav className="hidden lg:flex items-center gap-1">
@@ -443,6 +445,16 @@ export const Navbar = () => {
                           Edit Profile
                         </Link>
                       )}
+                      {role === 'shopkeeper' && (
+                        <Link
+                          to="/shop/profile"
+                          onClick={() => setIsUserMenuOpen(false)}
+                          className="w-full px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2"
+                        >
+                          <Pencil className="w-4 h-4" />
+                          Edit Store Profile
+                        </Link>
+                      )}
                       <button
                         onClick={() => {
                           setIsUserMenuOpen(false);
@@ -573,6 +585,13 @@ export const Navbar = () => {
                     className="block px-3 py-2 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-100"
                   >
                     Messages
+                  </Link>
+                  <Link
+                    to="/shop/profile"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="block px-3 py-2 rounded-xl text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+                  >
+                    Edit Store Profile
                   </Link>
                 </>
               )}
