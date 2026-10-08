@@ -1,27 +1,5 @@
 import { supabase } from '../config/supabase.js';
-import { FALLBACK_PRODUCTS, FALLBACK_SHOPS } from '../utils/fallbackData.js';
-import { findBlockedKeyword } from '../utils/shopRules.js';
-
-// Fallback-mode scoping: a signed-in shopkeeper only ever sees products owned
-// by THEIR shop. Brand-new registrations (own shop, no stock yet) get an empty
-// shelf — never the shared demo catalogue.
-const DEMO_SHOP_IDS = new Set([
-  'b0000000-0000-0000-0000-000000000001',
-  'b0000000-0000-0000-0000-000000000002',
-  'b0000000-0000-0000-0000-000000000003',
-  'b0000000-0000-0000-0000-000000000004',
-  'sehore-demo-001',
-]);
-const scopeFallbackProductsToShopkeeper = (products, ownerId) => {
-  const ownedShop = FALLBACK_SHOPS.find((s) => s.owner_id === ownerId && !DEMO_SHOP_IDS.has(s._id || s.id));
-  if (!ownedShop) return [];
-  const myShopId = String(ownedShop._id || ownedShop.id);
-  return products.filter((p) => {
-    const owner = p.shopId;
-    const ownerKey = owner && typeof owner === 'object' ? owner._id || owner.id : owner;
-    return String(ownerKey || '') === myShopId;
-  });
-};
+import { FALLBACK_PRODUCTS } from '../utils/fallbackData.js';
 
 // @desc    List & search products across nearby shops using Supabase
 // @route   GET /api/products
@@ -43,27 +21,6 @@ export const getProducts = async (req, res, next) => {
 
       if (shopId) {
         query = query.eq('shop_id', shopId);
-      } else if (req.user && req.user.role === 'shopkeeper') {
-        // Signed-in shopkeepers listing products WITHOUT an explicit shopId
-        // only ever see their own catalog — never every shop's rows.
-        const { data: myShopRow } = await supabase
-          .from('shops')
-          .select('id')
-          .eq('owner_id', req.user.id)
-          .single();
-        if (myShopRow?.id) {
-          query = query.eq('shop_id', myShopRow.id);
-        } else {
-          // Shopkeeper with no shop row yet -> empty shelf.
-          return res.json({
-            success: true,
-            count: 0,
-            total: 0,
-            page: 1,
-            pages: 1,
-            products: [],
-          });
-        }
       }
 
       if (category && category !== 'All') {
@@ -84,7 +41,7 @@ export const getProducts = async (req, res, next) => {
 
       const { data: prods, error } = await query;
 
-      if (!error && prods) {
+      if (!error && prods && prods.length > 0) {
         const formatted = prods.map((p) => ({
           _id: p.id,
           id: p.id,
@@ -131,10 +88,6 @@ export const getProducts = async (req, res, next) => {
         const ownerId = owner && typeof owner === 'object' ? owner._id || owner.id : owner;
         return String(ownerId || '') === target;
       });
-    } else if (req.user && req.user.role === 'shopkeeper') {
-      // When a shopkeeper requests products without an explicit shopId param,
-      // scope to their own shop instead of all demo products.
-      filtered = scopeFallbackProductsToShopkeeper(FALLBACK_PRODUCTS, req.user.id);
     }
     if (category && category !== 'All') filtered = filtered.filter((p) => p.category === category);
     if (search) filtered = filtered.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()));
@@ -148,19 +101,13 @@ export const getProducts = async (req, res, next) => {
       products: filtered,
     });
   } catch (error) {
-    // On unexpected errors, never dump the full demo catalogue on a
-    // signed-in shopkeeper — scope it to their own shop first.
-    const fallbackProducts =
-      req.user && req.user.role === 'shopkeeper'
-        ? scopeFallbackProductsToShopkeeper(FALLBACK_PRODUCTS, req.user.id)
-        : FALLBACK_PRODUCTS;
     res.json({
       success: true,
-      count: fallbackProducts.length,
-      total: fallbackProducts.length,
+      count: FALLBACK_PRODUCTS.length,
+      total: FALLBACK_PRODUCTS.length,
       page: 1,
       pages: 1,
-      products: fallbackProducts,
+      products: FALLBACK_PRODUCTS,
     });
   }
 };
@@ -251,38 +198,21 @@ export const createProduct = async (req, res, next) => {
 
     if (supabase) {
       let targetShopId = shopId;
-      let shopTags = [];
       if (!targetShopId || req.user.role !== 'admin') {
         const { data: shop } = await supabase
           .from('shops')
-          .select('id, category, address')
+          .select('id')
           .eq('owner_id', req.user.id)
           .single();
 
         if (shop) {
           targetShopId = shop.id;
-          shopTags = shop.address?.tags || (shop.category ? [shop.category] : []);
         } else if (req.user.role === 'admin' && targetShopId) {
           // Admin provided shopId
         } else {
           return res.status(400).json({
             success: false,
             message: 'No shop profile found for your account. Please register your shop first.',
-          });
-        }
-      }
-
-      // Tag-based keyword restrictions: a hardware shop cannot list groceries,
-      // etc. (see backend/utils/shopRules.js).
-      if (shopTags.length > 0 && req.user.role !== 'admin') {
-        const blocked = findBlockedKeyword(
-          [name, description, (Array.isArray(tags) ? tags : []).join(' ')].join(' '),
-          shopTags
-        );
-        if (blocked) {
-          return res.status(400).json({
-            success: false,
-            message: `"${blocked}" cannot be listed by a shop tagged: ${shopTags.join(', ')}. Remove that keyword or ask an admin to update your shop tags.`,
           });
         }
       }
@@ -337,82 +267,17 @@ export const createProduct = async (req, res, next) => {
       });
     }
 
-    // Fallback (no-database) path: apply the same tag keyword restrictions
-    // using the demo shop owned by this account, when one exists.
-    const DEMO_SHOP_IDS = new Set([
-      'b0000000-0000-0000-0000-000000000001',
-      'b0000000-0000-0000-0000-000000000002',
-      'b0000000-0000-0000-0000-000000000003',
-      'b0000000-0000-0000-0000-000000000004',
-      'sehore-demo-001',
-    ]);
-    const ownedFallbackShop = FALLBACK_SHOPS.find((s) => s.owner_id === req.user.id && !DEMO_SHOP_IDS.has(s._id || s.id));
-    const fallbackTags = ownedFallbackShop
-      ? ownedFallbackShop.address?.tags || [ownedFallbackShop.category]
-      : [];
-    if (fallbackTags.length > 0 && req.user.role !== 'admin') {
-      const blocked = findBlockedKeyword(
-        [name, description, (Array.isArray(tags) ? tags : []).join(' ')].join(' '),
-        fallbackTags
-      );
-      if (blocked) {
-        return res.status(400).json({
-          success: false,
-          message: `"${blocked}" cannot be listed by a shop tagged: ${fallbackTags.join(', ')}. Remove that keyword or ask an admin to update your shop tags.`,
-        });
-      }
-    }
-
-    const prodId = 'prod_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-    const parsedQty = parseInt(quantityInStock !== undefined ? quantityInStock : quantity_in_stock) || 0;
-    const parsedThreshold = parseInt(lowStockThreshold !== undefined ? lowStockThreshold : low_stock_threshold) || 3;
-    const parsedPrice = parseFloat(price);
-    const parsedMrp = mrp ? parseFloat(mrp) : parsedPrice;
-
-    const shopRef = ownedFallbackShop
-      ? {
-          _id: ownedFallbackShop._id || ownedFallbackShop.id,
-          id: ownedFallbackShop._id || ownedFallbackShop.id,
-          shopName: ownedFallbackShop.shopName,
-          rating: ownedFallbackShop.rating || 5.0,
-          address: ownedFallbackShop.address,
-          location: ownedFallbackShop.location,
-        }
-      : {
-          _id: req.user.id,
-          id: req.user.id,
-          shopName: req.user.name ? `${req.user.name}'s Store` : 'My Store',
-        };
-
-    const newFallbackProduct = {
-      _id: prodId,
-      id: prodId,
-      name: name.trim(),
-      brand: brand || '',
-      description: description || '',
-      category,
-      price: parsedPrice,
-      mrp: parsedMrp,
-      unit: unit || 'piece',
-      quantityInStock: parsedQty,
-      lowStockThreshold: parsedThreshold,
-      isAvailable: isAvailable !== undefined ? !!isAvailable : true,
-      stockStatus: parsedQty > parsedThreshold ? 'in_stock' : parsedQty > 0 ? 'low_stock' : 'out_of_stock',
-      images: Array.isArray(images) && images.length ? images : ['https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=500&q=80'],
-      tags: Array.isArray(tags) ? tags : [],
-      shopId: shopRef,
-    };
-
-    FALLBACK_PRODUCTS.unshift(newFallbackProduct);
-    if (ownedFallbackShop) {
-      if (!Array.isArray(ownedFallbackShop.products)) ownedFallbackShop.products = [];
-      ownedFallbackShop.products.unshift(newFallbackProduct);
-    }
-
     res.status(201).json({
       success: true,
-      message: 'Product added successfully to shop inventory',
-      product: newFallbackProduct,
+      message: 'Product added successfully',
+      product: {
+        _id: 'b0000000-0000-0000-0000-' + Math.random().toString(36).substring(2, 14),
+        id: 'b0000000-0000-0000-0000-' + Math.random().toString(36).substring(2, 14),
+        name,
+        category,
+        price: parseFloat(price),
+        quantityInStock: parseInt(quantityInStock) || 10,
+      },
     });
   } catch (error) {
     next(error);
@@ -430,7 +295,7 @@ export const updateProduct = async (req, res, next) => {
       // 1. Fetch product and its shop to verify ownership
       const { data: prod, error: fetchErr } = await supabase
         .from('products')
-        .select('*, shops(id, owner_id, category, address)')
+        .select('*, shops(id, owner_id)')
         .eq('id', id)
         .single();
 
@@ -444,30 +309,6 @@ export const updateProduct = async (req, res, next) => {
           success: false,
           message: 'Access denied: You can only modify products from your own shop',
         });
-      }
-
-      // 2b. Tag-based keyword restrictions apply on edit too (non-admin only).
-      const {
-        name: editName,
-        description: editDescription,
-        tags: editTags,
-      } = req.body;
-      if (req.user.role !== 'admin') {
-        const shopTags =
-          prod.shops?.address?.tags ||
-          (prod.shops?.category ? [prod.shops.category] : []);
-        const editedText = [
-          editName !== undefined ? editName : prod.name,
-          editDescription !== undefined ? editDescription : prod.description || '',
-          (Array.isArray(editTags) ? editTags : prod.tags || []).join(' '),
-        ].join(' ');
-        const blocked = findBlockedKeyword(editedText, shopTags);
-        if (blocked) {
-          return res.status(400).json({
-            success: false,
-            message: `"${blocked}" cannot be listed by a shop tagged: ${shopTags.join(', ')}. Remove that keyword or ask an admin to update your shop tags.`,
-          });
-        }
       }
 
       // 3. Build sanitized update payload

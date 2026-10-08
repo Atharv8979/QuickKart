@@ -5,8 +5,8 @@ import { Radio, Users, Clock, Zap, Check, ShieldCheck, ToggleLeft, ToggleRight }
 
 export const LiveStateToggleCard = ({ shop, onUpdate }) => {
   const { addToast } = useNotification();
-  const [currentlyServing, setCurrentlyServing] = useState(shop?.liveServingCount ?? shop?.liveState?.currentlyServing ?? 0);
-  const [queueTime, setQueueTime] = useState(shop?.estWaitTimeMinutes ?? shop?.liveState?.queueTimeMinutes ?? 0);
+  const [currentlyServing, setCurrentlyServing] = useState(shop?.liveState?.currentlyServing ?? 2);
+  const [queueTime, setQueueTime] = useState(shop?.liveState?.queueTimeMinutes ?? 5);
   const [isOpenNow, setIsOpenNow] = useState(shop?.openingHours?.isOpenNow ?? true);
   const [isAccepting, setIsAccepting] = useState(shop?.isAcceptingRequests ?? true);
   const [saving, setSaving] = useState(false);
@@ -19,12 +19,10 @@ export const LiveStateToggleCard = ({ shop, onUpdate }) => {
         openingHours: {
           isOpenNow,
         },
-        liveServingCount: currentlyServing,
-        estWaitTimeMinutes: queueTime,
         liveState: {
           currentlyServing,
           queueTimeMinutes: queueTime,
-          responseRatePercent: shop?.liveState?.responseRatePercent || 100,
+          responseRatePercent: shop?.liveState?.responseRatePercent || 98,
           lastActiveMinutesAgo: 1,
           isAvailableNow: isOpenNow,
         },
@@ -53,7 +51,7 @@ export const LiveStateToggleCard = ({ shop, onUpdate }) => {
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-brand-400 animate-pulse" />
               <span className="text-xs font-black uppercase tracking-wider text-brand-400">
-                QuickKart Live Counter & Queue Dispatch
+                QuickKart Live Business Engine (Fig 16.4)
               </span>
             </div>
             <h3 className="text-xl font-black text-white mt-0.5">

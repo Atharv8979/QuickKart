@@ -406,7 +406,7 @@ export const getShopRelevantRequests = async (req, res, next) => {
 
       const { data: requests, error } = await query;
 
-      if (!error && requests) {
+      if (!error && requests && requests.length > 0) {
         const formatted = requests.map((r) => {
           const match = shopProducts.find(
             (p) => p.name.toLowerCase().includes(r.product_name.toLowerCase()) || r.product_name.toLowerCase().includes(p.name.toLowerCase())
@@ -448,37 +448,25 @@ export const getShopRelevantRequests = async (req, res, next) => {
       }
     }
 
-    // Fallback mode:
-    const DEMO_SHOP_IDS = new Set([
-      'b0000000-0000-0000-0000-000000000001',
-      'b0000000-0000-0000-0000-000000000002',
-      'b0000000-0000-0000-0000-000000000003',
-      'b0000000-0000-0000-0000-000000000004',
-      'sehore-demo-001',
-    ]);
-    const isDemoSharma = req.user?.id === 'a0000000-0000-0000-0000-000000000002';
-    const ownedShop = (FALLBACK_SHOPS || []).find((s) => s.owner_id === req.user?.id && !DEMO_SHOP_IDS.has(s._id || s.id));
+    // Linked fallback: broadcast requests are category-routed to the logged-in
+    // shopkeeper's own shop category (same category vocabulary the customer
+    // dashboard broadcasts with), plus anything freshly created this session.
+    // This keeps Sharma (Hardware) from seeing Medical/Stationery noise while
+    // still guaranteeing a new customer order appears instantly.
+    const ownedShop = (FALLBACK_SHOPS || []).find((s) => s.owner_id === req.user.id);
     const ownedCategory = ownedShop?.category || null;
+    const freshIds = new Set(
+      (FALLBACK_CUSTOMER_REQUESTS || [])
+        .filter((r) => String(r._id || r.id || '').startsWith('req_'))
+        .map((r) => r._id || r.id)
+    );
+    const scoped = (FALLBACK_CUSTOMER_REQUESTS || []).filter((r) => {
+      if (freshIds.has(r._id || r.id)) return true; // just created -> visible to all linked shops
+      if (!ownedCategory) return true;
+      return (r.category || '') === ownedCategory;
+    });
 
-    let scoped = [];
-    if (isDemoSharma) {
-      // Demo Sharma sees demo Karol Bagh fixtures for exhibition walkthrough
-      scoped = (FALLBACK_CUSTOMER_REQUESTS || []).filter((r) => {
-        if (!ownedCategory) return true;
-        return (r.category || '') === ownedCategory || String(r._id || r.id || '').startsWith('req_');
-      });
-    } else {
-      // Real registered shopkeeper: only show requests freshly broadcasted this session
-      // matching their category, NEVER pre-seeded demo fixtures.
-      scoped = (FALLBACK_CUSTOMER_REQUESTS || []).filter((r) => {
-        const idStr = String(r._id || r.id || '');
-        const isFresh = idStr.startsWith('req_') && !idStr.startsWith('req_cust_');
-        if (!isFresh) return false;
-        if (!ownedCategory) return true;
-        return (r.category || '') === ownedCategory;
-      });
-    }
-
+    // Resilient in-memory fallback with rich Golden Taraju requests
     res.json({
       success: true,
       count: scoped.length,

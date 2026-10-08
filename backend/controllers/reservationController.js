@@ -426,14 +426,7 @@ export const getShopReservations = async (req, res, next) => {
     // Linked fallback: each shopkeeper only sees holds placed on their own shop.
     // Sharma (…0002) owns b000…0001, Gupta (…0003) owns b000…0002 — same IDs
     // the customer dashboard orders against, so the link never breaks.
-    const DEMO_SHOP_IDS = new Set([
-      'b0000000-0000-0000-0000-000000000001',
-      'b0000000-0000-0000-0000-000000000002',
-      'b0000000-0000-0000-0000-000000000003',
-      'b0000000-0000-0000-0000-000000000004',
-      'sehore-demo-001',
-    ]);
-    const ownedShop = FALLBACK_SHOPS.find((s) => s.owner_id === req.user.id && !DEMO_SHOP_IDS.has(s._id || s.id));
+    const ownedShop = FALLBACK_SHOPS.find((s) => s.owner_id === req.user.id);
     let scoped = FALLBACK_RESERVATIONS;
     if (ownedShop) {
       const ownedId = ownedShop._id || ownedShop.id;

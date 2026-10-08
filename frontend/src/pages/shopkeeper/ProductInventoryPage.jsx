@@ -31,14 +31,13 @@ export const ProductInventoryPage = () => {
     setLoading(true);
     try {
       const shopRes = await shopService.getMyShop();
-      if (shopRes.success && shopRes.shop) {
+      if (shopRes.success) {
         setShop(shopRes.shop);
-        const shopId = shopRes.shop._id || shopRes.shop.id;
         const prodRes = await productService.getProducts({
-          shopId,
+          shopId: shopRes.shop._id,
         });
         if (prodRes.success) {
-          setProducts(prodRes.products || []);
+          setProducts(prodRes.products);
         }
       }
     } catch (err) {

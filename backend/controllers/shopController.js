@@ -279,8 +279,6 @@ export const getMyShop = async (req, res, next) => {
             description: shop.description,
             category: shop.category,
             address: shop.address,
-            gstNumber: shop.address?.gstNumber || null,
-            tags: shop.address?.tags || (shop.category ? [shop.category] : []),
             location: { coordinates: [shop.location_lng, shop.location_lat] },
             contactPhone: shop.contact_phone,
             bannerImage: shop.banner_image,
@@ -296,51 +294,9 @@ export const getMyShop = async (req, res, next) => {
       }
     }
 
-    // Owner-matched shop lookup — skip hardcoded demo shops (they have fixed UUIDs)
-    // Only use generated fallbacks or shops created during registration
-    const DEMO_SHOP_IDS = new Set([
-      'b0000000-0000-0000-0000-000000000001',
-      'b0000000-0000-0000-0000-000000000002',
-      'b0000000-0000-0000-0000-000000000003',
-      'b0000000-0000-0000-0000-000000000004',
-      'sehore-demo-001',
-    ]);
-    let ownedFallback = FALLBACK_SHOPS.find(
-      (s) => s.owner_id === req.user.id && !DEMO_SHOP_IDS.has(s._id || s.id)
-    ) || null;
-    if (!ownedFallback && req.user?.role === 'shopkeeper') {
-      const generatedShopId = 'shop_' + req.user.id.substring(0, 10);
-      ownedFallback = {
-        _id: generatedShopId,
-        id: generatedShopId,
-        owner_id: req.user.id,
-        shopName: req.user.name ? `${req.user.name}'s Store` : 'My QuickKart Store',
-        tagline: 'Neighborhood Merchant Store',
-        description: '',
-        category: 'General Store',
-        address: req.user.address || { city: 'New Delhi', state: 'Delhi' },
-        gstNumber: null,
-        tags: ['General Store'],
-        contactPhone: req.user.phone || null,
-        location: {
-          type: 'Point',
-          coordinates: [77.1906, 28.6517],
-        },
-        rating: 5.0,
-        numReviews: 0,
-        isActive: true,
-        verificationStatus: 'verified',
-        liveServingCount: 0,
-        estWaitTimeMinutes: 0,
-        promptResponseRate: 100,
-        products: [],
-      };
-      FALLBACK_SHOPS.unshift(ownedFallback);
-    }
-
     res.json({
       success: true,
-      shop: ownedFallback,
+      shop: FALLBACK_SHOPS[0],
     });
   } catch (error) {
     next(error);
@@ -352,7 +308,7 @@ export const getMyShop = async (req, res, next) => {
 // @access  Private (Shopkeeper)
 export const updateMyShop = async (req, res, next) => {
   try {
-    const { shopName, tagline, category, description, contactPhone, address, gstNumber, tags, openingHours } = req.body;
+    const { shopName, tagline, category, description, contactPhone, address } = req.body;
     const updateData = {};
     if (shopName) updateData.shop_name = shopName;
     if (tagline !== undefined) updateData.tagline = tagline;
@@ -360,25 +316,6 @@ export const updateMyShop = async (req, res, next) => {
     if (description !== undefined) updateData.description = description;
     if (contactPhone) updateData.contact_phone = contactPhone;
     if (address) updateData.address = address;
-    // GST + shop tags are stored inside the address JSONB (no schema change),
-    // so profile edits merge them into the address object.
-    if (gstNumber !== undefined || tags !== undefined) {
-      const mergedAddress = { ...(updateData.address || address || {}) };
-      if (gstNumber !== undefined) mergedAddress.gstNumber = gstNumber;
-      if (tags !== undefined) mergedAddress.tags = tags;
-      updateData.address = mergedAddress;
-    }
-    // Opening hours are nested inside address JSONB
-    if (openingHours) {
-      const existingAddress = updateData.address || address || {};
-      updateData.address = {
-        ...existingAddress,
-        openingHours: {
-          open: openingHours.open,
-          close: openingHours.close,
-        },
-      };
-    }
     updateData.updated_at = new Date().toISOString();
 
     if (supabase) {
@@ -398,27 +335,10 @@ export const updateMyShop = async (req, res, next) => {
       });
     }
 
-    const DEMO_SHOP_IDS = new Set([
-      'b0000000-0000-0000-0000-000000000001',
-      'b0000000-0000-0000-0000-000000000002',
-      'b0000000-0000-0000-0000-000000000003',
-      'b0000000-0000-0000-0000-000000000004',
-      'sehore-demo-001',
-    ]);
-    const fallbackItem = FALLBACK_SHOPS.find((s) => s.owner_id === req.user.id && !DEMO_SHOP_IDS.has(s._id || s.id));
-    if (fallbackItem) {
-      if (shopName) fallbackItem.shopName = shopName;
-      if (tagline !== undefined) fallbackItem.tagline = tagline;
-      if (category) fallbackItem.category = category;
-      if (description !== undefined) fallbackItem.description = description;
-      if (contactPhone) fallbackItem.contactPhone = contactPhone;
-      if (updateData.address) fallbackItem.address = updateData.address;
-    }
-
     res.json({
       success: true,
       message: 'Store profile updated',
-      shop: fallbackItem || req.body,
+      shop: req.body,
     });
   } catch (error) {
     next(error);
@@ -455,25 +375,10 @@ export const updateLiveBusinessState = async (req, res, next) => {
       });
     }
 
-    const DEMO_SHOP_IDS = new Set([
-      'b0000000-0000-0000-0000-000000000001',
-      'b0000000-0000-0000-0000-000000000002',
-      'b0000000-0000-0000-0000-000000000003',
-      'b0000000-0000-0000-0000-000000000004',
-      'sehore-demo-001',
-    ]);
-    const fallbackItem = FALLBACK_SHOPS.find((s) => s.owner_id === req.user.id && !DEMO_SHOP_IDS.has(s._id || s.id));
-    if (fallbackItem) {
-      if (liveServingCount !== undefined) fallbackItem.liveServingCount = parseInt(liveServingCount);
-      if (estWaitTimeMinutes !== undefined) fallbackItem.estWaitTimeMinutes = parseInt(estWaitTimeMinutes);
-      if (promptResponseRate !== undefined) fallbackItem.promptResponseRate = parseInt(promptResponseRate);
-      if (isOpenNow !== undefined) fallbackItem.isActive = !!isOpenNow;
-    }
-
     res.json({
       success: true,
       message: 'Live business capability updated',
-      shop: fallbackItem || req.body,
+      shop: req.body,
     });
   } catch (error) {
     next(error);
@@ -497,8 +402,8 @@ export const getRegionalRanking = async (req, res, next) => {
 
     // Determine current shop reference point
     let myShop = null;
-    let shopCoords = [77.1906, 28.6517]; // Default Karol Bagh reference
-    let targetShopId = shopId || null;
+    let shopCoords = [77.1906, 28.6517]; // Default Karol Bagh Sharma Hardware
+    let targetShopId = shopId || 'b0000000-0000-0000-0000-000000000001';
 
     if (req.user) {
       if (supabase) {
@@ -514,68 +419,14 @@ export const getRegionalRanking = async (req, res, next) => {
             shopCoords = [dbShop.location_lng, dbShop.location_lat];
           }
         }
-      } else {
-        const DEMO_SHOP_IDS = new Set([
-          'b0000000-0000-0000-0000-000000000001',
-          'b0000000-0000-0000-0000-000000000002',
-          'b0000000-0000-0000-0000-000000000003',
-          'b0000000-0000-0000-0000-000000000004',
-          'sehore-demo-001',
-        ]);
-        const userOwned = FALLBACK_SHOPS.find((s) => s.owner_id === req.user.id && !DEMO_SHOP_IDS.has(s._id || s.id));
-        if (userOwned) {
-          myShop = userOwned;
-          targetShopId = userOwned.id || userOwned._id;
-          shopCoords = userOwned.location?.coordinates || shopCoords;
-        }
       }
     }
 
     if (!myShop) {
-      const found = targetShopId
-        ? FALLBACK_SHOPS.find((s) => s.id === targetShopId || s._id === targetShopId)
-        : null;
-      if (found) {
-        shopCoords = found.location?.coordinates || [77.1906, 28.6517];
-        targetShopId = found.id || found._id;
-        myShop = found;
-      } else if (!req.user || req.user.role === 'admin') {
-        const fallbackDefault = FALLBACK_SHOPS[0];
-        shopCoords = fallbackDefault?.location?.coordinates || [77.1906, 28.6517];
-        targetShopId = fallbackDefault?.id || fallbackDefault?._id;
-        myShop = fallbackDefault;
-      }
-    }
-
-    // Resolve THIS shopkeeper's real catalog first so every "My Shop" column
-    // only ever reflects stock they actually own — never another (demo)
-    // shop's inventory. Supabase mode reads their live products row; local
-    // fallback mode matches owned rows in the seed catalogue by shop id.
-    // NOTE: seed products store `shopId` as an embedded shop OBJECT
-    // ({ _id, id, shopName }), while dynamically created ones use a plain
-    // string — normalize both before comparing (same rule as productController).
-    const isOwnedFallbackProduct = (p) => {
-      if (!targetShopId) return false;
-      const owner = p.shopId || p.shop_id;
-      const ownerKey = owner && typeof owner === 'object' ? owner._id || owner.id : owner;
-      return String(ownerKey || '') === String(targetShopId);
-    };
-
-    let ownedCatalog = FALLBACK_PRODUCTS.filter(isOwnedFallbackProduct);
-    if (supabase && targetShopId) {
-      const { data: myProducts } = await supabase
-        .from('products')
-        .select('*')
-        .eq('shop_id', targetShopId);
-      ownedCatalog = (myProducts || []).map((p) => ({
-        name: p.name,
-        category: p.category,
-        price: p.price,
-        unit: p.unit,
-        images: p.images,
-        quantityInStock: p.quantity_in_stock ?? 0,
-        lowStockThreshold: p.low_stock_threshold ?? 5,
-      }));
+      const found = FALLBACK_SHOPS.find((s) => s.id === targetShopId || s._id === targetShopId) || FALLBACK_SHOPS[0];
+      shopCoords = found.location?.coordinates || [77.1906, 28.6517];
+      targetShopId = found.id || found._id;
+      myShop = found;
     }
 
     // Step 1: Identify all shops within selected geographical range
@@ -637,9 +488,6 @@ export const getRegionalRanking = async (req, res, next) => {
         const catalogItem = FALLBACK_PRODUCTS.find(
           (p) => p.name.toLowerCase() === name.toLowerCase()
         );
-        const ownedItem = ownedCatalog.find(
-          (p) => String(p.name || '').toLowerCase() === name.toLowerCase()
-        );
         productAggregates[name] = {
           productName: name,
           category: catalogItem?.category || 'General',
@@ -650,10 +498,8 @@ export const getRegionalRanking = async (req, res, next) => {
           totalRevenue: 0,
           orderCount: 0,
           myShopQuantitySold: 0,
-          // Only report stock for products THIS shop actually lists.
-          myShopStock: ownedItem ? ownedItem.quantityInStock : 0,
-          lowStockThreshold: ownedItem?.lowStockThreshold || catalogItem?.lowStockThreshold || 5,
-          inMyCatalog: !!ownedItem,
+          myShopStock: catalogItem?.quantityInStock !== undefined ? catalogItem.quantityInStock : 8,
+          lowStockThreshold: catalogItem?.lowStockThreshold || 5,
         };
       }
 
@@ -669,12 +515,9 @@ export const getRegionalRanking = async (req, res, next) => {
       }
     });
 
-    // Also include this shop's OWN catalog products so the shopkeeper sees
-    // comparison — strictly products owned by their shop id, never the whole
-    // shared demo catalogue.
-    ownedCatalog.forEach((p) => {
-      const existing = productAggregates[p.name];
-      if (!existing) {
+    // Also include this shop's catalog products if they exist so the shopkeeper sees comparison
+    FALLBACK_PRODUCTS.forEach((p) => {
+      if (!productAggregates[p.name]) {
         productAggregates[p.name] = {
           productName: p.name,
           category: p.category,
@@ -687,12 +530,7 @@ export const getRegionalRanking = async (req, res, next) => {
           myShopQuantitySold: 0,
           myShopStock: p.quantityInStock,
           lowStockThreshold: p.lowStockThreshold || 5,
-          inMyCatalog: true,
         };
-      } else {
-        existing.inMyCatalog = true;
-        existing.myShopStock = p.quantityInStock;
-        existing.lowStockThreshold = p.lowStockThreshold || existing.lowStockThreshold;
       }
     });
 
@@ -728,9 +566,8 @@ export const getRegionalRanking = async (req, res, next) => {
         indicators.push({ type: 'high_demand', label: '📈 High regional demand', color: 'bg-indigo-100 text-indigo-800 border-indigo-300' });
       }
 
-      // Low stock warning — only for products THIS shop actually lists,
-      // so demo/other-shop items never render as "your" stock alerts.
-      if (prod.inMyCatalog && prod.myShopStock <= prod.lowStockThreshold) {
+      // Low stock warning (stock <= threshold and in demand)
+      if (prod.myShopStock <= prod.lowStockThreshold) {
         indicators.push({
           type: 'low_stock',
           label: prod.myShopStock === 0 ? '🚫 Out of stock' : '⚠️ Low stock',
@@ -761,9 +598,7 @@ export const getRegionalRanking = async (req, res, next) => {
       period,
       selectedShop: {
         id: targetShopId,
-        // Never fall back to another shop's name — a shopkeeper without a
-        // resolvable profile gets null, not the demo store's title.
-        shopName: myShop?.shopName || myShop?.shop_name || null,
+        shopName: myShop?.shopName || myShop?.shop_name || 'Sharma Hardware & Daily Essentials Store',
         coordinates: shopCoords,
       },
       shopsInRangeCount: inRangeShopIds.size,

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { shopService } from '../../services/shopService';
 import { useNotification } from '../../context/NotificationContext';
-import { ShopkeeperProfilePhoto } from '../../components/shopkeeper/ShopkeeperProfilePhoto';
 import { Store, MapPin, Clock, Phone, Mail, Save, RefreshCw } from 'lucide-react';
 
 export const ShopProfileEditPage = () => {
@@ -99,10 +98,6 @@ export const ShopProfileEditPage = () => {
           </p>
         </div>
       </div>
-
-      {/* Initial-letter profile picture (editable) — mirrors the customer
-          profile page pattern. */}
-      <ShopkeeperProfilePhoto />
 
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
         <form onSubmit={handleSave} className="space-y-4">

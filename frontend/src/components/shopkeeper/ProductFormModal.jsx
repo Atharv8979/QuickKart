@@ -4,35 +4,12 @@ import { productService } from '../../services/productService';
 import { useNotification } from '../../context/NotificationContext';
 import { Plus, Package, Tag, Layers, IndianRupee } from 'lucide-react';
 
-const getDefaultImage = (cat) => {
-  const c = String(cat || '').toLowerCase();
-  if (c.includes('grocer') || c.includes('food') || c.includes('dairy') || c.includes('bakery')) {
-    return 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80';
-  }
-  if (c.includes('pharm') || c.includes('med') || c.includes('health')) {
-    return 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=600&q=80';
-  }
-  if (c.includes('elect') || c.includes('mobile') || c.includes('gadget')) {
-    return 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&w=600&q=80';
-  }
-  if (c.includes('station') || c.includes('book')) {
-    return 'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?auto=format&fit=crop&w=600&q=80';
-  }
-  if (c.includes('cloth') || c.includes('apparel') || c.includes('fashion')) {
-    return 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=600&q=80';
-  }
-  if (c.includes('hardw') || c.includes('tool') || c.includes('plumb')) {
-    return 'https://images.unsplash.com/photo-1581783342308-f792dbdd27c5?auto=format&fit=crop&w=600&q=80';
-  }
-  return 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?auto=format&fit=crop&w=600&q=80';
-};
-
 export const ProductFormModal = ({ isOpen, onClose, product, shopCategory, onSuccess }) => {
   const { addToast } = useNotification();
 
   const [name, setName] = useState('');
   const [brand, setBrand] = useState('');
-  const [category, setCategory] = useState(shopCategory || 'General Store');
+  const [category, setCategory] = useState(shopCategory || 'Hardware & Tools');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [mrp, setMrp] = useState('');
@@ -47,7 +24,7 @@ export const ProductFormModal = ({ isOpen, onClose, product, shopCategory, onSuc
     if (product) {
       setName(product.name || '');
       setBrand(product.brand || '');
-      setCategory(product.category || shopCategory || 'General Store');
+      setCategory(product.category || shopCategory || 'Hardware & Tools');
       setDescription(product.description || '');
       setPrice(product.price ? String(product.price) : '');
       setMrp(product.mrp ? String(product.mrp) : '');
@@ -59,14 +36,14 @@ export const ProductFormModal = ({ isOpen, onClose, product, shopCategory, onSuc
     } else {
       setName('');
       setBrand('');
-      setCategory(shopCategory || 'General Store');
+      setCategory(shopCategory || 'Hardware & Tools');
       setDescription('');
       setPrice('');
       setMrp('');
       setUnit('piece');
       setQuantityInStock(10);
       setLowStockThreshold(3);
-      setImageUrl('');
+      setImageUrl('https://images.unsplash.com/photo-1581783342308-f792dbdd27c5?auto=format&fit=crop&w=600&q=80');
       setTags('');
     }
   }, [product, shopCategory]);
@@ -84,26 +61,23 @@ export const ProductFormModal = ({ isOpen, onClose, product, shopCategory, onSuc
       .map((t) => t.trim())
       .filter(Boolean);
 
-    const targetImg = imageUrl.trim() || getDefaultImage(category);
-
     const payload = {
-      name: name.trim(),
-      brand: brand.trim(),
-      category: category.trim() || 'General Store',
-      description: description.trim(),
+      name,
+      brand,
+      category,
+      description,
       price: parseFloat(price),
       mrp: mrp ? parseFloat(mrp) : parseFloat(price),
-      unit: unit.trim() || 'piece',
+      unit,
       quantityInStock: parseInt(quantityInStock) || 0,
       lowStockThreshold: parseInt(lowStockThreshold) || 3,
-      images: [targetImg],
+      images: imageUrl ? [imageUrl] : ['https://images.unsplash.com/photo-1581783342308-f792dbdd27c5?auto=format&fit=crop&w=600&q=80'],
       tags: tagArray,
     };
 
     try {
-      const targetId = product?._id || product?.id;
-      if (targetId) {
-        const res = await productService.updateProduct(targetId, payload);
+      if (product?._id) {
+        const res = await productService.updateProduct(product._id, payload);
         if (res.success) {
           addToast('Product updated in catalog', 'success');
           onClose();

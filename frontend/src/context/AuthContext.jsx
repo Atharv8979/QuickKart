@@ -77,9 +77,6 @@ export const AuthProvider = ({ children }) => {
     if (res.success) {
       setToken(res.token);
       setUser(res.user);
-      // Shopkeepers get their own shop row created at registration — persist
-      // it so the dashboard header shows their shop name/address right away.
-      if (res.shop) setShop(res.shop);
       return { success: true, user: res.user };
     }
     return { success: false, message: res.message };
