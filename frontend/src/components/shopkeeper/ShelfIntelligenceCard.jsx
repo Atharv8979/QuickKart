@@ -54,7 +54,7 @@ export const ShelfIntelligenceCard = () => {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
             <span className="text-xs font-black uppercase tracking-wider text-amber-400">
-              Chapter 16.3 • Computer-Vision Shelf & Expiry Intelligence (Fig 16.3)
+              AI Computer-Vision Shelf & Expiry Intelligence
             </span>
           </div>
           <h3 className="text-xl font-black text-white mt-0.5">
@@ -69,7 +69,7 @@ export const ShelfIntelligenceCard = () => {
             className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all flex items-center gap-1.5"
           >
             <Camera className="w-3.5 h-3.5 text-amber-400" />
-            {scanning ? 'Scanning Shelf...' : 'Simulate Shelf CV Scan'}
+            {scanning ? 'Scanning Shelf...' : 'Run Shelf Scanner'}
           </button>
           <button
             onClick={handleApplyDiscounts}

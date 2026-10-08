@@ -100,7 +100,14 @@ export default function App() {
       <main className="flex-1">
         <Routes>
           {/* Public Routes (Chapter 10.4) */}
-          <Route path="/" element={<LandingPage />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute allowedRoles={['customer', 'admin']} targetPersona="customer">
+                <LandingPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/login" element={<LoginPage />} />

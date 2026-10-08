@@ -430,7 +430,14 @@ export const getAllUsers = async (req, res, next) => {
     const enhanced = filtered.map(u => {
       let shop = null;
       if (u.role === 'shopkeeper') {
-        const matchingShop = FALLBACK_SHOPS.find(s => s.owner_id === u.id || s.owner_id === u._id);
+        const DEMO_SHOP_IDS = new Set([
+          'b0000000-0000-0000-0000-000000000001',
+          'b0000000-0000-0000-0000-000000000002',
+          'b0000000-0000-0000-0000-000000000003',
+          'b0000000-0000-0000-0000-000000000004',
+          'sehore-demo-001',
+        ]);
+        const matchingShop = FALLBACK_SHOPS.find(s => (s.owner_id === u.id || s.owner_id === u._id) && !DEMO_SHOP_IDS.has(s._id || s.id));
         if (matchingShop) {
           shop = {
             id: matchingShop.id || matchingShop._id,
