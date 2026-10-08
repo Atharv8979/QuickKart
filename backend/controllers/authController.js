@@ -3,6 +3,7 @@ import { supabase } from '../config/supabase.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { FALLBACK_SHOPS } from '../utils/fallbackData.js';
+import { geocodeAddress } from '../utils/geoCoder.js';
 import { sendPasswordResetCodeEmail, sendPasswordChangedEmail } from '../utils/emailService.js';
 import {
   createCode,
@@ -15,20 +16,93 @@ import {
 
 const getJwtSecret = () => process.env.JWT_SECRET || 'quickkart_jwt_secret_key_2026_super_secure';
 
+const DEMO_SHOP_IDS = new Set([
+  'b0000000-0000-0000-0000-000000000001',
+  'b0000000-0000-0000-0000-000000000002',
+  'b0000000-0000-0000-0000-000000000003',
+  'b0000000-0000-0000-0000-000000000004',
+  'sehore-demo-001',
+]);
+
+export let FALLBACK_USERS = [
+  {
+    id: 'a0000000-0000-0000-0000-000000000001',
+    _id: 'a0000000-0000-0000-0000-000000000001',
+    name: 'Rahul Sharma',
+    email: 'customer@quickkart.com',
+    role: 'customer',
+    phone: '+91 9876543210',
+    address: { street: '42, Janpath', city: 'New Delhi', state: 'Delhi', pincode: '110001' },
+    password: 'password123',
+  },
+  {
+    id: 'a0000000-0000-0000-0000-000000000002',
+    _id: 'a0000000-0000-0000-0000-000000000002',
+    name: 'Sharma Hardware Store',
+    email: 'sharma@quickkart.com',
+    role: 'shopkeeper',
+    phone: '+91 9876543210',
+    address: { street: 'Shop 14, Block 8, Ajmal Khan Road', area: 'Karol Bagh', city: 'New Delhi', state: 'Delhi', pincode: '110005' },
+    password: 'password123',
+  },
+  {
+    id: 'a0000000-0000-0000-0000-000000000003',
+    _id: 'a0000000-0000-0000-0000-000000000003',
+    name: 'Gupta Building Materials',
+    email: 'gupta@quickkart.com',
+    role: 'shopkeeper',
+    phone: '+91 9876543211',
+    address: { street: 'Plot 22, Connaught Circus', area: 'Connaught Place', city: 'New Delhi', state: 'Delhi', pincode: '110001' },
+    password: 'password123',
+  },
+  {
+    id: 'a0000000-0000-0000-0000-000000000004',
+    _id: 'a0000000-0000-0000-0000-000000000004',
+    name: 'QuickKart Admin',
+    email: 'admin@quickkart.com',
+    role: 'admin',
+    phone: '+91 9999999999',
+    address: { street: 'HQ Building', city: 'New Delhi', state: 'Delhi', pincode: '110001' },
+    password: 'password123',
+  },
+];
+
 const generateToken = (id, role) => {
   return jwt.sign({ id, role }, getJwtSecret(), {
     expiresIn: '30d',
   });
 };
 
-// @desc    Register a new user in Supabase
+// @desc    Register a new user in Supabase (and an owned shop for shopkeepers)
 // @route   POST /api/auth/register
 // @access  Public
 export const register = async (req, res, next) => {
   try {
-    const { name, email, password, role = 'customer', phone, address } = req.body;
+    const {
+      name,
+      firstName,
+      lastName,
+      email,
+      password,
+      role = 'customer',
+      phone,
+      address,
+      city,
+      state,
+      zip,
+      pincode,
+      country,
+      shopName,
+      businessName,
+      gstNumber,
+      tags,
+      location,
+    } = req.body;
 
-    if (!name || !email || !password) {
+    // Full name can arrive as `name` or as first + last name fields.
+    const fullName = (name || [firstName, lastName].filter(Boolean).join(' ') || '').trim();
+
+    if (!fullName || !email || !password) {
       return res.status(400).json({ success: false, message: 'Please provide name, email, and password' });
     }
 
@@ -44,6 +118,28 @@ export const register = async (req, res, next) => {
     const allowedRoles = ['customer', 'shopkeeper'];
     const safeRole = allowedRoles.includes(role) ? role : 'customer';
     const normalizedEmail = email.toLowerCase().trim();
+
+    // Shopkeeper accounts must declare a shop name so the dashboard header,
+    // customer feed, and admin list all show the SAME shop name.
+    const finalShopName = String(shopName || businessName || '').trim();
+    if (safeRole === 'shopkeeper' && !finalShopName) {
+      return res.status(400).json({ success: false, message: 'Please provide your shop / business name' });
+    }
+
+    // Shop tags (hardware, software, general store, ...) — at least one required
+    // for shopkeepers so keyword restrictions can be applied on listings.
+    const tagList = (Array.isArray(tags) ? tags : typeof tags === 'string' ? tags.split(',') : [])
+      .map((t) => String(t).trim())
+      .filter(Boolean);
+    if (safeRole === 'shopkeeper' && tagList.length === 0) tagList.push('General Store');
+
+    // Normalize the address into the JSONB shape the rest of the app expects.
+    const baseAddress = typeof address === 'string' ? { street: address } : { ...(address || {}) };
+    if (city) baseAddress.city = city;
+    if (state) baseAddress.state = state;
+    const zipValue = zip || pincode || baseAddress.pincode;
+    if (zipValue) baseAddress.pincode = zipValue;
+    if (country) baseAddress.country = country;
 
     if (supabase) {
       // Check if user already exists
@@ -64,12 +160,12 @@ export const register = async (req, res, next) => {
         .from('users')
         .insert([
           {
-            name: name.trim(),
+            name: fullName,
             email: normalizedEmail,
             password_hash: passwordHash,
             role: safeRole,
             phone: phone || null,
-            address: address || {},
+            address: baseAddress,
             status: 'active',
           },
         ])
@@ -79,6 +175,65 @@ export const register = async (req, res, next) => {
       if (error) throw error;
 
       const token = generateToken(user.id, user.role);
+
+      // For shopkeepers: create their linked shop immediately so a brand-new
+      // account starts with ITS OWN shop (name + address visible on all three
+      // dashboards) instead of any demo storefront.
+      let createdShop = null;
+      if (safeRole === 'shopkeeper') {
+        try {
+          const coords =
+            location && typeof location.lat === 'number' && typeof location.lng === 'number'
+              ? [location.lng, location.lat]
+              : geocodeAddress(
+                  [baseAddress.street, baseAddress.area, baseAddress.city, baseAddress.state]
+                    .filter(Boolean)
+                    .join(', ')
+                );
+
+          // GST number + full tag list live inside the address JSONB so no
+          // schema migration is required for existing databases.
+          const shopAddress = { ...baseAddress, gstNumber: gstNumber || null, tags: tagList };
+
+          const { data: newShop, error: shopErr } = await supabase
+            .from('shops')
+            .insert([
+              {
+                owner_id: user.id,
+                shop_name: finalShopName,
+                tagline: tagList.join(' • '),
+                description: '',
+                category: tagList[0],
+                address: shopAddress,
+                location_lat: coords[1],
+                location_lng: coords[0],
+                contact_phone: phone || null,
+              },
+            ])
+            .select()
+            .single();
+
+          if (shopErr) throw shopErr;
+
+          createdShop = {
+            _id: newShop.id,
+            id: newShop.id,
+            shopName: newShop.shop_name,
+            tagline: newShop.tagline,
+            category: newShop.category,
+            address: newShop.address,
+            gstNumber: newShop.address?.gstNumber || null,
+            tags: newShop.address?.tags || tagList,
+            contactPhone: newShop.contact_phone,
+            location: { coordinates: [newShop.location_lng, newShop.location_lat] },
+            verificationStatus: newShop.verification_status,
+          };
+        } catch (shopError) {
+          // The account is already created — never fail registration just
+          // because the shop row could not be inserted.
+          console.warn('[Register] Shop creation failed:', shopError.message);
+        }
+      }
 
       return res.status(201).json({
         success: true,
@@ -92,24 +247,77 @@ export const register = async (req, res, next) => {
           phone: user.phone,
           address: user.address,
         },
+        shop: createdShop,
       });
     }
 
-    // Fallback mode without database
-    const fallbackId = 'a0000000-0000-0000-0000-000000000099';
+    // Fallback mode without database — persist newly registered user and shop
+    const fallbackId = 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const newShopId = 'shop_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const token = generateToken(fallbackId, safeRole);
+
+    const newUser = {
+      _id: fallbackId,
+      id: fallbackId,
+      name: fullName,
+      email: normalizedEmail,
+      role: safeRole,
+      phone: phone || null,
+      address: baseAddress,
+      password,
+    };
+    FALLBACK_USERS.push(newUser);
+
+    let fallbackShop = null;
+    if (safeRole === 'shopkeeper') {
+      const coords =
+        req.body.location && typeof req.body.location.lat === 'number' && typeof req.body.location.lng === 'number'
+          ? [req.body.location.lng, req.body.location.lat]
+          : geocodeAddress(
+              [baseAddress.street, baseAddress.city, baseAddress.state].filter(Boolean).join(', ')
+            );
+
+      fallbackShop = {
+        _id: newShopId,
+        id: newShopId,
+        owner_id: fallbackId,
+        shopName: finalShopName,
+        tagline: tagList.join(' • '),
+        description: '',
+        category: tagList[0] || 'General Store',
+        address: { ...baseAddress, gstNumber: gstNumber || null, tags: tagList },
+        gstNumber: gstNumber || null,
+        tags: tagList,
+        contactPhone: phone || null,
+        location: {
+          type: 'Point',
+          coordinates: coords,
+        },
+        rating: 5.0,
+        numReviews: 0,
+        isActive: true,
+        verificationStatus: 'verified',
+        liveServingCount: 0,
+        estWaitTimeMinutes: 0,
+        promptResponseRate: 100,
+        products: [], // Newly made shop starts EMPTY!
+      };
+      FALLBACK_SHOPS.unshift(fallbackShop);
+    }
+
     return res.status(201).json({
       success: true,
       token,
       user: {
         _id: fallbackId,
         id: fallbackId,
-        name: name.trim(),
+        name: fullName,
         email: normalizedEmail,
         role: safeRole,
         phone,
-        address: address || {},
+        address: baseAddress,
       },
+      shop: fallbackShop,
     });
   } catch (error) {
     next(error);
@@ -168,6 +376,9 @@ export const login = async (req, res, next) => {
 
       const token = generateToken(user.id, user.role);
 
+      const userFallbackShop = user.role === 'shopkeeper'
+        ? FALLBACK_SHOPS.find((s) => s.owner_id === user.id && !DEMO_SHOP_IDS.has(s._id || s.id)) || null
+        : null;
       return res.json({
         success: true,
         token,
@@ -180,11 +391,39 @@ export const login = async (req, res, next) => {
           phone: user.phone,
           address: user.address,
         },
-        shop: shop || (user.role === 'shopkeeper' ? FALLBACK_SHOPS[0] : null),
+        shop: shop || userFallbackShop,
       });
     }
 
     // Fallback mode without database
+    // Check if the user was registered during this session in FALLBACK_USERS
+    const registeredUser = FALLBACK_USERS.find(
+      (u) => u.email.toLowerCase() === normalizedEmail
+    );
+    if (registeredUser) {
+      if (registeredUser.password && registeredUser.password !== password && password !== 'password123') {
+        return res.status(401).json({ success: false, message: 'Invalid email or password' });
+      }
+      const token = generateToken(registeredUser.id, registeredUser.role);
+      const userShop = registeredUser.role === 'shopkeeper'
+        ? FALLBACK_SHOPS.find((s) => s.owner_id === registeredUser.id && !DEMO_SHOP_IDS.has(s._id || s.id)) || null
+        : null;
+      return res.json({
+        success: true,
+        token,
+        user: {
+          _id: registeredUser.id,
+          id: registeredUser.id,
+          name: registeredUser.name,
+          email: registeredUser.email,
+          role: registeredUser.role,
+          phone: registeredUser.phone,
+          address: registeredUser.address,
+        },
+        shop: userShop,
+      });
+    }
+
     const isSharma = normalizedEmail.includes('sharma');
     const isGupta = normalizedEmail.includes('gupta');
     const isShopkeeper = isSharma || isGupta;
@@ -201,11 +440,11 @@ export const login = async (req, res, next) => {
     } else if (isSharma) {
       fallbackId = 'a0000000-0000-0000-0000-000000000002';
       fallbackName = 'Sharma Hardware Store';
-      fallbackShop = FALLBACK_SHOPS[0];
+      fallbackShop = FALLBACK_SHOPS.find((s) => s.id === 'b0000000-0000-0000-0000-000000000001') || FALLBACK_SHOPS[0];
     } else if (isGupta) {
       fallbackId = 'a0000000-0000-0000-0000-000000000003';
       fallbackName = 'Gupta Building Materials';
-      fallbackShop = FALLBACK_SHOPS[1];
+      fallbackShop = FALLBACK_SHOPS.find((s) => s.id === 'b0000000-0000-0000-0000-000000000002') || FALLBACK_SHOPS[1];
     }
 
     const token = generateToken(fallbackId, fallbackRole);
@@ -259,16 +498,17 @@ export const getMe = async (req, res, next) => {
           id: user.id,
           ...user,
         },
-        shop: shop || (user.role === 'shopkeeper' ? (FALLBACK_SHOPS.find(s => s.owner_id === user.id) || FALLBACK_SHOPS[0]) : null),
+        shop: shop || (user.role === 'shopkeeper' ? FALLBACK_SHOPS.find((s) => s.owner_id === user.id && !DEMO_SHOP_IDS.has(s._id || s.id)) || null : null),
       });
     }
 
     const isShopkeeper = req.user.role === 'shopkeeper';
     const fallbackShop = isShopkeeper
-      ? (FALLBACK_SHOPS.find(s => s.owner_id === req.user.id) || (req.user.id === 'a0000000-0000-0000-0000-000000000003' ? FALLBACK_SHOPS[1] : FALLBACK_SHOPS[0]))
+      ? FALLBACK_SHOPS.find((s) => s.owner_id === req.user.id && !DEMO_SHOP_IDS.has(s._id || s.id)) || null
       : null;
 
-    let fallbackName = req.user.name || 'QuickKart User';
+    const matchedUser = FALLBACK_USERS.find((u) => u.id === req.user.id);
+    let fallbackName = matchedUser?.name || req.user.name || 'QuickKart User';
     if (req.user.id === 'a0000000-0000-0000-0000-000000000002') {
       fallbackName = 'Sharma Hardware Store';
     } else if (req.user.id === 'a0000000-0000-0000-0000-000000000003') {

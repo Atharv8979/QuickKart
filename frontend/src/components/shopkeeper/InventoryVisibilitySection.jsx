@@ -166,7 +166,28 @@ export const InventoryVisibilitySection = ({
       </div>
 
       {/* Products Grid */}
-      {filteredProducts.length === 0 ? (
+      {products.length === 0 ? (
+        <div className="text-center py-16 px-4 border-2 border-dashed border-brand-200 bg-brand-50/30 rounded-3xl space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-brand-500/10 text-brand-600 flex items-center justify-center mx-auto text-3xl">
+            📦
+          </div>
+          <div className="max-w-md mx-auto space-y-1">
+            <h3 className="text-base font-black text-slate-900">Your Store Catalog is Empty</h3>
+            <p className="text-xs text-slate-500">
+              Start adding your products to make them visible to shoppers in your neighborhood. You can set prices, stock levels, and accept pickup hold requests.
+            </p>
+          </div>
+          {onOpenAddModal && (
+            <button
+              onClick={onOpenAddModal}
+              className="px-6 py-3 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-lg shadow-brand-500/25 inline-flex items-center gap-2 transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              Add Your First Product
+            </button>
+          )}
+        </div>
+      ) : filteredProducts.length === 0 ? (
         <div className="text-center py-12 border border-dashed border-slate-200 rounded-2xl space-y-2">
           <Package className="w-10 h-10 text-slate-300 mx-auto" />
           <p className="text-xs font-bold text-slate-700">No inventory matches your current filter</p>
@@ -194,7 +215,7 @@ export const InventoryVisibilitySection = ({
                 }`}
               >
                 <div>
-                  {/* Top Bar: Stock Status Badge */}
+                  {/* Top Bar: Stock Status Badge & Actions */}
                   <div className="flex items-center justify-between gap-2 mb-2.5">
                     {isHealthy && (
                       <span className="bg-emerald-50 text-emerald-800 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
@@ -205,7 +226,7 @@ export const InventoryVisibilitySection = ({
                     {isLow && (
                       <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-amber-300 flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                        ⚠️ Low Stock Warning
+                        ⚠️ Low Stock
                       </span>
                     )}
                     {isOut && (
@@ -215,15 +236,27 @@ export const InventoryVisibilitySection = ({
                       </span>
                     )}
 
-                    <span className="text-[10px] text-slate-400 font-bold uppercase truncate">
-                      {p.category}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      {onEditProduct && (
+                        <button
+                          type="button"
+                          onClick={() => onEditProduct(p)}
+                          className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+                          title="Edit product"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <span className="text-[10px] text-slate-400 font-bold uppercase truncate max-w-[80px]">
+                        {p.category}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Thumbnail & Name */}
                   <div className="flex items-start gap-3">
                     <img
-                      src={p.images?.[0] || 'https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=600&q=80'}
+                      src={p.images?.[0] || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=500&q=80'}
                       alt={p.name}
                       className="w-14 h-14 rounded-xl object-cover border border-slate-200 flex-shrink-0"
                       loading="lazy"
