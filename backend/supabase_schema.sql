@@ -152,6 +152,44 @@ CREATE TABLE IF NOT EXISTS reviews (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 9. CONVERSATIONS TABLE (Customer-Shopkeeper Chat)
+CREATE TABLE IF NOT EXISTS conversations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
+    product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+    product_context JSONB DEFAULT '{}'::jsonb,
+    last_message_text TEXT,
+    last_message_at TIMESTAMPTZ DEFAULT NOW(),
+    last_message_sender_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    unread_count_customer INT DEFAULT 0,
+    unread_count_shop INT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(customer_id, shop_id, product_id)
+);
+
+-- 10. MESSAGES TABLE (Chat Messages with Image Support)
+CREATE TABLE IF NOT EXISTS messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
+    sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    sender_role VARCHAR(50) NOT NULL CHECK (sender_role IN ('customer', 'shopkeeper')),
+    text TEXT,
+    image_url TEXT,
+    image_thumbnail_url TEXT,
+    message_type VARCHAR(50) DEFAULT 'text' CHECK (message_type IN ('text', 'image', 'system')),
+    read_by_customer BOOLEAN DEFAULT false,
+    read_by_shop BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_conversations_customer ON conversations(customer_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_shop ON conversations(shop_id);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
+
 -- ====================================================================
 -- DISABLE ROW LEVEL SECURITY (Allows backend API to read/write freely)
 -- ====================================================================
@@ -163,6 +201,18 @@ ALTER TABLE requests DISABLE ROW LEVEL SECURITY;
 ALTER TABLE request_responses DISABLE ROW LEVEL SECURITY;
 ALTER TABLE reservations DISABLE ROW LEVEL SECURITY;
 ALTER TABLE reviews DISABLE ROW LEVEL SECURITY;
+ALTER TABLE conversations DISABLE ROW LEVEL SECURITY;
+ALTER TABLE messages DISABLE ROW LEVEL SECURITY;
+
+-- ====================================================================
+-- STORAGE BUCKET FOR CHAT IMAGES
+-- Run this in Supabase Dashboard -> Storage -> New Bucket
+-- Bucket name: chat-images
+-- Public: true
+-- File size limit: 5MB
+-- Allowed MIME types: image/*
+-- ====================================================================
+-- INSERT INTO storage.buckets (id, name, public) VALUES ('chat-images', 'chat-images', true) ON CONFLICT DO NOTHING;
 
 -- ====================================================================
 -- SEED INITIAL DATA (Test Accounts, Verified Stores & Products)

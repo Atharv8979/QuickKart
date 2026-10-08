@@ -11,13 +11,22 @@ export const chatService = {
     return res.data;
   },
 
-  getMessages: async (conversationId) => {
-    const res = await api.get(`/chat/conversations/${conversationId}/messages`);
+  getMessages: async (conversationId, params = {}) => {
+    const res = await api.get(`/chat/conversations/${conversationId}/messages`, { params });
     return res.data;
   },
 
   sendMessage: async (conversationId, messageData) => {
     const res = await api.post(`/chat/conversations/${conversationId}/messages`, messageData);
+    return res.data;
+  },
+
+  uploadImage: async (file) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    const res = await api.post('/chat/upload-image', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return res.data;
   },
 

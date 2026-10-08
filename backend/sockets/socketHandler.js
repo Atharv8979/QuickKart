@@ -41,6 +41,18 @@ export const initializeSocket = (io) => {
       }
     });
 
+    // Handle image message - forward to conversation room
+    socket.on('send_image', ({ conversationId, imageUrl, thumbnailUrl, senderName }) => {
+      if (conversationId && imageUrl) {
+        socket.to(`conversation_${conversationId}`).emit('new_image_message', {
+          conversationId,
+          imageUrl,
+          thumbnailUrl,
+          senderName,
+        });
+      }
+    });
+
     socket.on('disconnect', () => {
       // Clean disconnect
     });
