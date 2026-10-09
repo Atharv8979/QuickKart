@@ -6,6 +6,7 @@ import { CheckCircle2, AlertTriangle, XCircle, Send, IndianRupee, Clock } from '
 
 export const RespondModal = ({ isOpen, onClose, requestItem, onSuccess }) => {
   const { addToast } = useNotification();
+  const budget = requestItem?.budget ?? requestItem?.expectedBudget;
 
   const [status, setStatus] = useState('available');
   const [offeredPrice, setOfferedPrice] = useState('');
@@ -23,12 +24,12 @@ export const RespondModal = ({ isOpen, onClose, requestItem, onSuccess }) => {
       setAltName(requestItem.myResponse.alternativeProductName || '');
     } else {
       setStatus('available');
-      setOfferedPrice(requestItem?.budget ? String(requestItem.budget) : '');
+      setOfferedPrice(budget ? String(budget) : '');
       setPrepTime(10);
       setNotes('');
       setAltName('');
     }
-  }, [requestItem]);
+  }, [requestItem, budget]);
 
   if (!requestItem) return null;
 
@@ -69,7 +70,7 @@ export const RespondModal = ({ isOpen, onClose, requestItem, onSuccess }) => {
           <p className="text-slate-400 font-medium">Customer is looking for:</p>
           <h4 className="font-bold text-slate-900 text-sm">{requestItem.productName}</h4>
           <p className="text-slate-600">
-            Quantity: {requestItem.quantity} {requestItem.unit} • Budget: {requestItem.budget ? `₹${requestItem.budget}` : 'Any'}
+            Quantity: {requestItem.quantity} {requestItem.unit} • Budget: {budget != null && budget > 0 ? `₹${budget}` : 'Any'}
           </p>
         </div>
 

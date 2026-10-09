@@ -198,13 +198,13 @@ export const CustomerRequestCard = ({
           {/* Customer Offer */}
           <div>
             <span className="text-[11px] text-slate-400 font-semibold block">
-              Customer Offer:
+              Customer Budget:
             </span>
             <div className="flex items-baseline gap-1">
               <span className="text-base font-black text-brand-600">
-                ₹{customerOffer}
+                {customerOffer > 0 ? `₹${customerOffer}` : 'Flexible'}
               </span>
-              <span className="text-[10px] text-slate-400 font-medium">/ unit</span>
+              {customerOffer > 0 && <span className="text-[10px] text-slate-400 font-medium">INR</span>}
             </div>
           </div>
 
@@ -215,9 +215,9 @@ export const CustomerRequestCard = ({
             </span>
             <div className="flex items-baseline gap-1">
               <span className="text-base font-black text-slate-700 line-through decoration-slate-300">
-                ₹{currentPrice}
+                {currentPrice > 0 ? `₹${currentPrice}` : 'Not listed'}
               </span>
-              <span className="text-[10px] text-slate-400 font-medium">/ unit</span>
+              {currentPrice > 0 && <span className="text-[10px] text-slate-400 font-medium">/ unit</span>}
             </div>
           </div>
         </div>

@@ -160,7 +160,7 @@ export const MyRequestsPage = () => {
                       <span>
                         Qty: {req.quantity} {req.unit}
                       </span>
-                      <span>Budget: {req.budget ? `₹${req.budget}` : 'Any'}</span>
+                      <span>Budget: {(req.budget ?? req.expectedBudget) ? `₹${req.budget ?? req.expectedBudget}` : 'Any'}</span>
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-100">

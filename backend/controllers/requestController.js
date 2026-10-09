@@ -6,10 +6,25 @@ import { FALLBACK_CUSTOMER_REQUESTS, FALLBACK_PRODUCTS, FALLBACK_RESERVATIONS, F
 // @access  Private (Customer)
 export const createRequest = async (req, res, next) => {
   try {
-    const { productName, category, quantity, unit, expectedBudget, urgency, notes } = req.body;
+    const {
+      productName,
+      category,
+      quantity,
+      unit,
+      urgency,
+    } = req.body;
+    const budgetInput = req.body.expectedBudget ?? req.body.budget;
+    const expectedBudget = budgetInput === undefined || budgetInput === null || budgetInput === ''
+      ? null
+      : Number(budgetInput);
+    const notes = req.body.notes ?? req.body.note;
 
     if (!productName || !category) {
       return res.status(400).json({ success: false, message: 'Product name and category are required' });
+    }
+
+    if (expectedBudget !== null && (!Number.isFinite(expectedBudget) || expectedBudget < 0)) {
+      return res.status(400).json({ success: false, message: 'Budget must be a valid non-negative amount' });
     }
 
     if (supabase) {
@@ -22,7 +37,7 @@ export const createRequest = async (req, res, next) => {
             category,
             quantity: parseInt(quantity) || 1,
             unit: unit || 'piece',
-            expected_budget: expectedBudget ? parseFloat(expectedBudget) : null,
+            expected_budget: expectedBudget,
             urgency: urgency || 'today',
             notes,
             status: 'ACTIVE',
@@ -64,7 +79,10 @@ export const createRequest = async (req, res, next) => {
       category,
       quantity: parseInt(quantity) || 1,
       unit: unit || 'piece',
-      expectedBudget: expectedBudget ? parseFloat(expectedBudget) : 0,
+      budget: expectedBudget,
+      expectedBudget,
+      customerOffer: expectedBudget ?? 0,
+      currentPrice: 0,
       urgency: urgency || 'today',
       notes,
       status: 'ACTIVE',
@@ -117,6 +135,7 @@ export const getMyRequests = async (req, res, next) => {
           category: r.category,
           quantity: r.quantity,
           unit: r.unit,
+          budget: r.expected_budget,
           expectedBudget: r.expected_budget,
           urgency: r.urgency,
           status: r.status,
@@ -218,6 +237,7 @@ export const getRequestDetails = async (req, res, next) => {
             category: r.category,
             quantity: r.quantity,
             unit: r.unit,
+            budget: r.expected_budget,
             expectedBudget: r.expected_budget,
             urgency: r.urgency,
             status: r.status,
@@ -419,21 +439,23 @@ export const getShopRelevantRequests = async (req, res, next) => {
             category: r.category,
             quantity: r.quantity || 1,
             unit: r.unit || 'piece',
-            shopStock: match ? match.quantity_in_stock : 10,
-            customerOffer: r.expected_budget || (match ? Math.round(match.price * 0.9) : 60),
-            currentPrice: match ? match.price : (r.expected_budget ? Math.round(r.expected_budget * 1.1) : 70),
+            shopStock: match ? match.quantity_in_stock : 0,
+            budget: r.expected_budget,
+            expectedBudget: r.expected_budget,
+            customerOffer: r.expected_budget ?? 0,
+            currentPrice: match?.price ?? 0,
             status: r.status === 'ACTIVE' ? 'PENDING' : r.status,
             urgency: r.urgency || 'today',
             customerName: r.customer?.name || 'Customer',
             customerPhone: r.customer?.phone || '+91 9876543210',
             notes: r.notes || '',
             createdAt: r.created_at,
-            negotiationHistory: [
+            negotiationHistory: r.expected_budget == null ? [] : [
               {
                 sender: 'customer',
                 senderName: r.customer?.name || 'Customer',
-                offer: r.expected_budget || 60,
-                message: `Can you offer for ₹${r.expected_budget || 60}?`,
+                offer: r.expected_budget,
+                message: `Customer budget: ₹${r.expected_budget}.`,
                 time: r.created_at,
               }
             ],

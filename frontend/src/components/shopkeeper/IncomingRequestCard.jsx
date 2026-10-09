@@ -5,6 +5,7 @@ import { Badge } from '../common/Badge';
 export const IncomingRequestCard = ({ requestItem, onRespondClick }) => {
   const hasResponded = !!requestItem.myResponse;
   const isImmediate = requestItem.urgency === 'immediate';
+  const budget = requestItem.budget ?? requestItem.expectedBudget;
 
   return (
     <div
@@ -51,7 +52,7 @@ export const IncomingRequestCard = ({ requestItem, onRespondClick }) => {
           <div>
             <span className="text-slate-400 font-medium">Customer Budget:</span>
             <p className="font-bold text-slate-800">
-              {requestItem.budget ? `₹${requestItem.budget}` : 'Flexible'}
+              {budget != null && budget > 0 ? `₹${budget}` : 'Flexible'}
             </p>
           </div>
 
