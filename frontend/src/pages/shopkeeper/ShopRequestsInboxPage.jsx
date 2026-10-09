@@ -3,12 +3,13 @@ import { requestService } from '../../services/requestService';
 import { IncomingRequestCard } from '../../components/shopkeeper/IncomingRequestCard';
 import { RespondModal } from '../../components/shopkeeper/RespondModal';
 import { Send, RefreshCw, Filter, Clock } from 'lucide-react';
+import { useSocket } from '../../context/SocketContext';
 
 export const ShopRequestsInboxPage = () => {
   const [requests, setRequests] = useState([]);
-  const [selectedRequest, setSelectedRequest] = useState(null);
-  const [filter, setFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'RESPONDED'
+  const [filter, setFilter] = useState('ALL');
   const [loading, setLoading] = useState(true);
+  const { refetchRequests } = useSocket();
 
   const fetchRequests = async () => {
     setLoading(true);
@@ -26,7 +27,7 @@ export const ShopRequestsInboxPage = () => {
 
   useEffect(() => {
     fetchRequests();
-  }, []);
+  }, [refetchRequests]);
 
   const filteredRequests = requests.filter((r) => {
     if (filter === 'PENDING') return !r.myResponse;

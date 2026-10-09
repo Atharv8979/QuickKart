@@ -10,6 +10,7 @@ export const SocketProvider = ({ children }) => {
   const { addToast, setUnreadCount } = useNotification();
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [refetchRequests, setRefetchRequests] = useState(false);
 
   useEffect(() => {
     // Initialize Socket instance
@@ -60,6 +61,12 @@ export const SocketProvider = ({ children }) => {
           6000
         );
         setUnreadCount((c) => c + 1);
+        setRefetchRequests((c) => !c); // Trigger request list refetch
+      };
+
+      const handleBargainUpdate = (data) => {
+        setUnreadCount((c) => c + 1);
+        setRefetchRequests((c) => !c); // Trigger request list refetch for shopkeeper
       };
 
       const handleNewReservation = (data) => {
@@ -85,6 +92,7 @@ export const SocketProvider = ({ children }) => {
 
       socket.on('new_broadcast_request', handleBroadcastRequest);
       socket.on('request_response_received', handleRequestResponse);
+      socket.on('bargain_update', handleBargainUpdate);
       socket.on('new_reservation', handleNewReservation);
       socket.on('reservation_updated', handleReservationUpdated);
       socket.on('chat_notification', handleChatNotification);
@@ -92,15 +100,16 @@ export const SocketProvider = ({ children }) => {
       return () => {
         socket.off('new_broadcast_request', handleBroadcastRequest);
         socket.off('request_response_received', handleRequestResponse);
+        socket.off('bargain_update', handleBargainUpdate);
         socket.off('new_reservation', handleNewReservation);
         socket.off('reservation_updated', handleReservationUpdated);
         socket.off('chat_notification', handleChatNotification);
       };
     }
-  }, [socket, user, shop]);
+  }, [socket, user, shop, refetchRequests]);
 
   return (
-    <SocketContext.Provider value={{ socket, isConnected }}>
+    <SocketContext.Provider value={{ socket, isConnected, refetchRequests }}>
       {children}
     </SocketContext.Provider>
   );

@@ -3,8 +3,8 @@ import { FALLBACK_PRODUCTS, FALLBACK_SHOPS } from '../utils/fallbackData.js';
 import { findBlockedKeyword } from '../utils/shopRules.js';
 
 // Fallback-mode scoping: a signed-in shopkeeper only ever sees products owned
-// by THEIR shop. Brand-new registrations (own shop, no stock yet) get an empty
-// shelf — never the shared demo catalogue.
+// by THEIR shop, filtered by THEIR category. Brand-new registrations (own shop, no stock yet)
+// get an empty shelf — never the shared demo catalogue.
 const DEMO_SHOP_IDS = new Set([
   'b0000000-0000-0000-0000-000000000001',
   'b0000000-0000-0000-0000-000000000002',
@@ -12,15 +12,28 @@ const DEMO_SHOP_IDS = new Set([
   'b0000000-0000-0000-0000-000000000004',
   'sehore-demo-001',
 ]);
+const DEMO_CATEGORIES = new Set([
+  'Hardware & Tools',
+  'Plumbing & Sanitary',
+  'Electrical & Lighting',
+  'Stationery & Office',
+]);
+
 const scopeFallbackProductsToShopkeeper = (products, ownerId) => {
   // Never fall back to demo shops — only show products owned by this specific user
-  const ownedShop = FALLBACK_SHOPS.find((s) => s.owner_id === ownerId);
+  const ownedShop = FALLBACK_SHOPS.find((s) => s.owner_id === ownerId && !DEMO_SHOP_IDS.has(s._id || s.id));
   if (!ownedShop) return [];
   const myShopId = String(ownedShop._id || ownedShop.id);
+  const myCategory = ownedShop.category || '';
+
   return products.filter((p) => {
     const owner = p.shopId;
     const ownerKey = owner && typeof owner === 'object' ? owner._id || owner.id : owner;
-    return String(ownerKey || '') === myShopId;
+    // Filter by BOTH shop ID AND category to prevent cross-category leakage
+    const categoryMatch = DEMO_CATEGORIES.has(myCategory)
+      ? (p.category || '') === myCategory
+      : true; // For non-demo categories, category filtering is handled by Supabase mode
+    return String(ownerKey || '') === myShopId && categoryMatch;
   });
 };
 

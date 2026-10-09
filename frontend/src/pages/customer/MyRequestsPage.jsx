@@ -18,9 +18,11 @@ import {
   ChevronRight,
   CheckCircle2,
 } from 'lucide-react';
+import { useSocket } from '../../context/SocketContext';
 
 export const MyRequestsPage = () => {
   const navigate = useNavigate();
+  const { refetchRequests } = useSocket();
   const [requests, setRequests] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -51,7 +53,7 @@ export const MyRequestsPage = () => {
 
   useEffect(() => {
     fetchRequests();
-  }, []);
+  }, [refetchRequests]);
 
   const handleChat = async (responseItem) => {
     try {
