@@ -174,7 +174,7 @@ export const getOrCreateConversation = async (req, res, next) => {
       .eq('id', customerId)
       .single();
 
-    let productContext = {};
+    let localProductContext = {};
     if (productId) {
       const { data: product } = await supabase
         .from('products')
@@ -182,7 +182,7 @@ export const getOrCreateConversation = async (req, res, next) => {
         .eq('id', productId)
         .single();
       if (product) {
-        productContext = {
+        localProductContext = {
           _id: product.id,
           name: product.name,
           price: product.price,
@@ -198,7 +198,7 @@ export const getOrCreateConversation = async (req, res, next) => {
         customer_id: customerId,
         shop_id: shopIdFinal,
         product_id: productId || null,
-        product_context: productContext,
+        product_context: localProductContext,
         last_message_at: new Date().toISOString(),
       })
       .select()
