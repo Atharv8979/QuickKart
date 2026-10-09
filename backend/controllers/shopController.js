@@ -346,7 +346,7 @@ export const getMyShop = async (req, res, next) => {
         _id: generatedShopId,
         id: generatedShopId,
         owner_id: req.user.id,
-        shopName: req.user.name ? `${req.user.name}'s Store' : 'My QuickKart Store',
+        shopName: req.user.name ? `${req.user.name}'s Store` : 'My QuickKart Store',
         tagline: 'Neighborhood Merchant Store',
         description: '',
         category: 'General Store',
@@ -383,18 +383,7 @@ export const getMyShop = async (req, res, next) => {
       success: true,
       shop: ownedFallback,
     });
-  } catch (error) {
-    next(error);
-  }
-};
-      FALLBACK_SHOPS.unshift(ownedFallback);
-    }
-
-    res.json({
-      success: true,
-      shop: ownedFallback,
-    });
-  } catch (error) {
+} catch (error) {
     next(error);
   }
 };
@@ -603,7 +592,7 @@ export const getRegionalRanking = async (req, res, next) => {
     // only ever reflects stock they actually own — never another (demo)
     // shop's inventory. Supabase mode reads their live products row; local
     // fallback mode matches owned rows in the seed catalogue by shop id.
-    // NOTE: seed products store `shopId` as an embedded shop OBJECT
+    // NOTE: seed products store shopId as an embedded shop OBJECT
     // ({ _id, id, shopName }), while dynamically created ones use a plain
     // string — normalize both before comparing (same rule as productController).
     const isOwnedFallbackProduct = (p) => {
