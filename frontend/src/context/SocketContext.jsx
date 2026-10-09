@@ -37,11 +37,14 @@ export const SocketProvider = ({ children }) => {
 
   // Register user rooms when user or shop is loaded
   useEffect(() => {
-    if (socket && user?._id) {
-      socket.emit('join_user', user._id);
+    const userId = user?.id || user?._id;
+    const shopId = shop?.id || shop?._id;
 
-      if (shop?._id) {
-        socket.emit('join_shop', shop._id);
+    if (socket && userId) {
+      socket.emit('join_user', userId);
+
+      if (shopId) {
+        socket.emit('join_shop', shopId);
       }
 
       // Listeners for real-time broadcasts and events

@@ -18,9 +18,11 @@ import {
   RefreshCw,
   Navigation,
 } from 'lucide-react';
+import { useSocket } from '../../context/SocketContext';
 
 export const ReservationsPage = () => {
   const { addToast } = useNotification();
+  const { socket } = useSocket();
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -48,6 +50,17 @@ export const ReservationsPage = () => {
   useEffect(() => {
     fetchReservations();
   }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleUpdate = () => fetchReservations();
+    socket.on('reservation_updated', handleUpdate);
+    socket.on('new_reservation', handleUpdate);
+    return () => {
+      socket.off('reservation_updated', handleUpdate);
+      socket.off('new_reservation', handleUpdate);
+    };
+  }, [socket]);
 
   const handleCancel = async (id) => {
     if (!window.confirm('Are you sure you want to cancel this in-store hold?')) return;

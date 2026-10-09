@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { reservationService } from '../../services/reservationService';
 import { useNotification } from '../../context/NotificationContext';
+import { useSocket } from '../../context/SocketContext';
 import { Badge } from '../../components/common/Badge';
 import {
   ShoppingBag,
@@ -16,6 +17,7 @@ import {
 
 export const ShopReservationsPage = () => {
   const { addToast } = useNotification();
+  const { socket } = useSocket();
   const [reservations, setReservations] = useState([]);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [loading, setLoading] = useState(true);
@@ -39,6 +41,17 @@ export const ShopReservationsPage = () => {
   useEffect(() => {
     fetchReservations();
   }, [statusFilter]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleUpdate = () => fetchReservations();
+    socket.on('new_reservation', handleUpdate);
+    socket.on('reservation_updated', handleUpdate);
+    return () => {
+      socket.off('new_reservation', handleUpdate);
+      socket.off('reservation_updated', handleUpdate);
+    };
+  }, [socket]);
 
   const handleStatusTransition = async (id, newStatus, note) => {
     try {
@@ -115,7 +128,7 @@ export const ShopReservationsPage = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {reservations.map((res) => {
-            const customer = res.customerId;
+            const customer = typeof res.customerId === 'object' && res.customerId ? res.customerId : (res.customer || {});
             const isPending = res.status === 'PENDING';
             const isConfirmed = res.status === 'CONFIRMED';
             const isReady = res.status === 'READY';

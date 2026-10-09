@@ -503,6 +503,92 @@ export const bargainRequest = async (req, res, next) => {
 
     const offerVal = parseFloat(counterOffer);
 
+    if (supabase) {
+      const { data: request, error: reqErr } = await supabase
+        .from('requests')
+        .select('*, customer:users(id, name, phone)')
+        .eq('id', id)
+        .single();
+
+      if (!reqErr && request) {
+        // Resolve shopkeeper shop
+        let targetShopId = null;
+        const { data: myShop } = await supabase
+          .from('shops')
+          .select('id, shop_name')
+          .eq('owner_id', req.user.id)
+          .single();
+
+        if (myShop) {
+          targetShopId = myShop.id;
+        }
+
+        // Upsert quotation response
+        const { data: existingResp } = await supabase
+          .from('request_responses')
+          .select('id')
+          .eq('request_id', id)
+          .eq('shop_id', targetShopId)
+          .single();
+
+        if (existingResp) {
+          await supabase
+            .from('request_responses')
+            .update({
+              offered_price: offerVal,
+              notes: message || `Counter offer: ₹${offerVal}`,
+            })
+            .eq('id', existingResp.id);
+        } else if (targetShopId) {
+          await supabase.from('request_responses').insert([
+            {
+              request_id: id,
+              shop_id: targetShopId,
+              response_type: 'in_stock',
+              offered_price: offerVal,
+              notes: message || `Counter offer: ₹${offerVal}`,
+            },
+          ]);
+        }
+
+        const updatedRequest = {
+          _id: request.id,
+          id: request.id,
+          productName: request.product_name,
+          category: request.category,
+          quantity: request.quantity,
+          unit: request.unit,
+          expectedBudget: request.expected_budget,
+          customerOffer: offerVal,
+          currentPrice: offerVal,
+          status: 'BARGAINING',
+          customerName: request.customer?.name || 'Customer',
+          customerPhone: request.customer?.phone || '',
+          negotiationHistory: [
+            {
+              sender: 'shopkeeper',
+              senderName: myShop?.shop_name || 'Shopkeeper',
+              offer: offerVal,
+              message: message || `I can offer ₹${offerVal} with priority counter pickup.`,
+              time: new Date().toISOString(),
+            },
+          ],
+        };
+
+        const io = req.app.get('io');
+        if (io) {
+          io.emit('bargain_update', { requestId: id, request: updatedRequest });
+          io.to(`user_${request.customer_id}`).emit('bargain_update', { requestId: id, request: updatedRequest });
+        }
+
+        return res.json({
+          success: true,
+          message: 'Counter offer submitted',
+          request: updatedRequest,
+        });
+      }
+    }
+
     // Look up in fallback customer requests
     const reqItem = FALLBACK_CUSTOMER_REQUESTS.find((r) => r._id === id || r.id === id);
 
@@ -523,7 +609,7 @@ export const bargainRequest = async (req, res, next) => {
     reqItem.status = 'BARGAINING';
 
     // Simulated interactive customer reply
-    const lastCustOffer = reqItem.customerOffer;
+    const lastCustOffer = reqItem.customerOffer || reqItem.expectedBudget || offerVal;
     const diff = offerVal - lastCustOffer;
 
     let custMsg = null;
@@ -560,6 +646,12 @@ export const bargainRequest = async (req, res, next) => {
         requestId: id,
         request: reqItem,
       });
+      if (reqItem.customerId) {
+        io.to(`user_${reqItem.customerId}`).emit('bargain_update', {
+          requestId: id,
+          request: reqItem,
+        });
+      }
     }
 
     res.json({
@@ -578,13 +670,40 @@ export const bargainRequest = async (req, res, next) => {
 export const acceptRequest = async (req, res, next) => {
   try {
     const { id } = req.params;
+
+    if (supabase) {
+      const { data: request } = await supabase.from('requests').select('*').eq('id', id).single();
+      if (request) {
+        const agreedPrice = request.expected_budget || 0;
+        const updatedReq = {
+          _id: request.id,
+          id: request.id,
+          productName: request.product_name,
+          agreedPrice,
+          status: 'ACCEPTED',
+        };
+
+        const io = req.app.get('io');
+        if (io) {
+          io.emit('bargain_update', { requestId: id, request: updatedReq });
+          io.to(`user_${request.customer_id}`).emit('bargain_update', { requestId: id, request: updatedReq });
+        }
+
+        return res.json({
+          success: true,
+          message: 'Customer offer accepted!',
+          request: updatedReq,
+        });
+      }
+    }
+
     const reqItem = FALLBACK_CUSTOMER_REQUESTS.find((r) => r._id === id || r.id === id);
 
     if (!reqItem) {
       return res.status(404).json({ success: false, message: 'Request not found' });
     }
 
-    const agreedPrice = reqItem.customerOffer || reqItem.currentPrice;
+    const agreedPrice = reqItem.customerOffer || reqItem.currentPrice || reqItem.expectedBudget || 0;
     reqItem.status = 'ACCEPTED';
     reqItem.agreedPrice = agreedPrice;
     reqItem.negotiationHistory = reqItem.negotiationHistory || [];
@@ -595,6 +714,14 @@ export const acceptRequest = async (req, res, next) => {
       message: `Deal Accepted! Ready for counter collection at ₹${agreedPrice}.`,
       time: new Date().toISOString(),
     });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('bargain_update', { requestId: id, request: reqItem });
+      if (reqItem.customerId) {
+        io.to(`user_${reqItem.customerId}`).emit('bargain_update', { requestId: id, request: reqItem });
+      }
+    }
 
     res.json({
       success: true,
@@ -612,6 +739,27 @@ export const acceptRequest = async (req, res, next) => {
 export const rejectRequest = async (req, res, next) => {
   try {
     const { id } = req.params;
+
+    if (supabase) {
+      const { data: request } = await supabase.from('requests').select('*').eq('id', id).single();
+      if (request) {
+        await supabase.from('requests').update({ status: 'CLOSED' }).eq('id', id);
+        const updatedReq = { _id: request.id, id: request.id, status: 'REJECTED' };
+
+        const io = req.app.get('io');
+        if (io) {
+          io.emit('bargain_update', { requestId: id, request: updatedReq });
+          io.to(`user_${request.customer_id}`).emit('bargain_update', { requestId: id, request: updatedReq });
+        }
+
+        return res.json({
+          success: true,
+          message: 'Request offer declined',
+          request: updatedReq,
+        });
+      }
+    }
+
     const reqItem = FALLBACK_CUSTOMER_REQUESTS.find((r) => r._id === id || r.id === id);
 
     if (!reqItem) {
@@ -626,6 +774,14 @@ export const rejectRequest = async (req, res, next) => {
       message: 'Regrettably, we cannot accept this offer at current wholesale rates.',
       time: new Date().toISOString(),
     });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('bargain_update', { requestId: id, request: reqItem });
+      if (reqItem.customerId) {
+        io.to(`user_${reqItem.customerId}`).emit('bargain_update', { requestId: id, request: reqItem });
+      }
+    }
 
     res.json({
       success: true,
@@ -643,14 +799,94 @@ export const rejectRequest = async (req, res, next) => {
 export const confirmBargainDeal = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const reservationCode = 'QK-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+
+    if (supabase) {
+      const { data: request } = await supabase
+        .from('requests')
+        .select('*, customer:users(id, name, phone)')
+        .eq('id', id)
+        .single();
+
+      if (request) {
+        const { data: myShop } = await supabase
+          .from('shops')
+          .select('id')
+          .eq('owner_id', req.user.id)
+          .single();
+
+        const shopId = myShop?.id || 'b0000000-0000-0000-0000-000000000001';
+        const agreedPrice = req.body?.agreedPrice || request.expected_budget || 50;
+        const totalAmount = agreedPrice * (request.quantity || 1);
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+        const { data: newRes, error: resErr } = await supabase
+          .from('reservations')
+          .insert([
+            {
+              reservation_code: reservationCode,
+              customer_id: request.customer_id,
+              shop_id: shopId,
+              product_name: request.product_name,
+              quantity: request.quantity || 1,
+              unit: request.unit || 'piece',
+              agreed_price: parseFloat(agreedPrice),
+              total_amount: totalAmount,
+              status: 'CONFIRMED',
+              hold_duration_minutes: 60,
+              expires_at: expiresAt,
+            },
+          ])
+          .select('*, shops(id, shop_name, contact_phone, address)')
+          .single();
+
+        if (!resErr && newRes) {
+          await supabase.from('requests').update({ status: 'CLOSED' }).eq('id', id);
+
+          const io = req.app.get('io');
+          if (io) {
+            io.emit('new_reservation', {
+              reservationCode,
+              productName: request.product_name,
+              quantity: request.quantity,
+              shopId,
+            });
+            io.to(`user_${request.customer_id}`).emit('new_reservation', {
+              reservationCode,
+              productName: request.product_name,
+              quantity: request.quantity,
+              shopId,
+            });
+            io.emit('bargain_update', { requestId: id, request: { id, status: 'CONFIRMED' } });
+          }
+
+          return res.status(201).json({
+            success: true,
+            message: `Bargain confirmed! In-store reservation ticket ${reservationCode} issued.`,
+            reservation: {
+              _id: newRes.id,
+              id: newRes.id,
+              reservationCode: newRes.reservation_code,
+              productName: newRes.product_name,
+              quantity: newRes.quantity,
+              agreedPrice: newRes.agreed_price,
+              totalAmount: newRes.total_amount,
+              status: newRes.status,
+              expiresAt: newRes.expires_at,
+            },
+            request: { _id: id, id, status: 'CONFIRMED', reservationCode },
+          });
+        }
+      }
+    }
+
     const reqItem = FALLBACK_CUSTOMER_REQUESTS.find((r) => r._id === id || r.id === id);
 
     if (!reqItem) {
       return res.status(404).json({ success: false, message: 'Request not found' });
     }
 
-    const reservationCode = 'QK-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-    const agreedPrice = reqItem.agreedPrice || reqItem.customerOffer || reqItem.currentPrice;
+    const agreedPrice = reqItem.agreedPrice || reqItem.customerOffer || reqItem.currentPrice || reqItem.expectedBudget || 50;
     const totalAmount = agreedPrice * (reqItem.quantity || 1);
 
     // Create reservation record
@@ -658,14 +894,21 @@ export const confirmBargainDeal = async (req, res, next) => {
       _id: 'res_' + Date.now(),
       id: 'res_' + Date.now(),
       reservationCode,
-      customer_id: 'a0000000-0000-0000-0000-000000000001',
+      customer_id: reqItem.customerId || 'a0000000-0000-0000-0000-000000000001',
+      customerId: reqItem.customerId || 'a0000000-0000-0000-0000-000000000001',
       shop_id: 'b0000000-0000-0000-0000-000000000001',
+      shopId: 'b0000000-0000-0000-0000-000000000001',
       product_name: reqItem.productName,
+      productName: reqItem.productName,
       quantity: reqItem.quantity,
       unit: reqItem.unit || 'piece',
       agreed_price: agreedPrice,
+      agreedPrice,
       total_amount: totalAmount,
+      totalAmount,
       status: 'CONFIRMED',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       customer: { name: reqItem.customerName, phone: reqItem.customerPhone },
       created_at: new Date().toISOString(),
     };
@@ -687,6 +930,29 @@ export const confirmBargainDeal = async (req, res, next) => {
     reqItem.status = 'CONFIRMED';
     reqItem.reservationCode = reservationCode;
 
+    // Emit live socket event to notify customer and shopkeeper
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('new_reservation', {
+        reservationCode,
+        productName: reqItem.productName,
+        quantity: reqItem.quantity,
+        shopId: newReservation.shop_id,
+      });
+      io.emit('bargain_update', {
+        requestId: id,
+        request: reqItem,
+      });
+      if (reqItem.customerId) {
+        io.to(`user_${reqItem.customerId}`).emit('new_reservation', {
+          reservationCode,
+          productName: reqItem.productName,
+          quantity: reqItem.quantity,
+          shopId: newReservation.shop_id,
+        });
+      }
+    }
+
     res.status(201).json({
       success: true,
       message: `Bargain confirmed! In-store reservation ticket ${reservationCode} issued.`,
@@ -701,3 +967,4 @@ export const confirmBargainDeal = async (req, res, next) => {
 // Aliases for backwards compatibility
 export const createBroadcastRequest = createRequest;
 export const getShopRequestsInbox = getShopRelevantRequests;
+

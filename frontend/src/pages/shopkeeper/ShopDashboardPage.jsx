@@ -137,10 +137,12 @@ export const ShopDashboardPage = () => {
     socket.on('new_reservation', refreshLinkedOrders);
     socket.on('new_broadcast_request', refreshLinkedOrders);
     socket.on('reservation_updated', refreshLinkedOrders);
+    socket.on('bargain_update', refreshLinkedOrders);
     return () => {
       socket.off('new_reservation', refreshLinkedOrders);
       socket.off('new_broadcast_request', refreshLinkedOrders);
       socket.off('reservation_updated', refreshLinkedOrders);
+      socket.off('bargain_update', refreshLinkedOrders);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
