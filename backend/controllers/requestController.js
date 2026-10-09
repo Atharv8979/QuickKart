@@ -642,6 +642,78 @@ export const bargainRequest = async (req, res, next) => {
     // Socket notification
     const io = req.app.get('io');
     if (io) {
+      io.emit('bargain_update', { requestId: id, request: reqItem });
+    }
+
+    res.json({
+      success: true,
+      message: 'Counter offer submitted',
+      request: reqItem,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+          success: true,
+          message: 'Counter offer submitted',
+          request: updatedRequest,
+        });
+      }
+    }
+
+    // Look up in fallback customer requests
+    const reqItem = FALLBACK_CUSTOMER_REQUESTS.find((r) => r._id === id || r.id === id);
+
+    if (!reqItem) {
+      return res.status(404).json({ success: false, message: 'Customer request not found' });
+    }
+
+    const shopMsg = {
+      sender: 'shopkeeper',
+      senderName: 'Sharma Hardware (You)',
+      offer: offerVal,
+      message: message || `I can offer ₹${offerVal} with priority counter pickup.`,
+      time: new Date().toISOString(),
+    };
+
+    reqItem.negotiationHistory = reqItem.negotiationHistory || [];
+    reqItem.negotiationHistory.push(shopMsg);
+    reqItem.status = 'BARGAINING';
+
+    // Simulated interactive customer reply
+    const lastCustOffer = reqItem.customerOffer || reqItem.expectedBudget || offerVal;
+    const diff = offerVal - lastCustOffer;
+
+    let custMsg = null;
+    if (diff <= 5 || offerVal <= lastCustOffer) {
+      // Customer accepts deal
+      reqItem.status = 'ACCEPTED';
+      reqItem.agreedPrice = offerVal;
+      custMsg = {
+        sender: 'customer',
+        senderName: reqItem.customerName,
+        offer: offerVal,
+        message: 'Deal accepted! Thank you, looking forward to pickup.',
+        time: new Date().toISOString(),
+      };
+    } else {
+      // Customer makes slight final counter offer
+      const custCounter = Math.round(offerVal - diff * 0.4);
+      custMsg = {
+        sender: 'customer',
+        senderName: reqItem.customerName,
+        offer: custCounter,
+        message: `Can we settle at ₹${custCounter} final? Picking up today.`,
+        time: new Date().toISOString(),
+      };
+      reqItem.customerOffer = custCounter;
+    }
+
+    reqItem.negotiationHistory.push(custMsg);
+
+    // Socket notification
+    const io = req.app.get('io');
+    if (io) {
       io.emit('bargain_update', {
         requestId: id,
         request: reqItem,

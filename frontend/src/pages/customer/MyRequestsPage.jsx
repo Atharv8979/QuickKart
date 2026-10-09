@@ -37,11 +37,17 @@ export const MyRequestsPage = () => {
       const res = await requestService.getMyRequests();
       if (res.success) {
         setRequests(res.requests);
+        // Only set initial selectedRequest if none selected yet
         if (res.requests.length > 0 && !selectedRequest) {
           setSelectedRequest(res.requests[0]);
         } else if (selectedRequest) {
+          // Find updated request and keep selection in sync
           const updated = res.requests.find((r) => r._id === selectedRequest._id);
           if (updated) setSelectedRequest(updated);
+          // Also check if selected request now has responses (means shop replied)
+          const hasResponses = updated?.responses?.length > 0;
+          // If shop replied and we don't have a comparison grid ready, 
+          // that's fine - the UI will show the updated status
         }
       }
     } catch (err) {
