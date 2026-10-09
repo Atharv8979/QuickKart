@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { requestService } from '../../services/requestService';
 import { chatService } from '../../services/chatService';
@@ -6,6 +6,8 @@ import { ComparisonGrid } from '../../components/customer/ComparisonGrid';
 import { BroadcastRequestModal } from '../../components/customer/BroadcastRequestModal';
 import { ReservationModal } from '../../components/customer/ReservationModal';
 import { Badge } from '../../components/common/Badge';
+import { useSocket } from '../../context/SocketContext';
+import { useNotification } from '../../context/NotificationContext';
 import {
   Send,
   Clock,
@@ -21,37 +23,71 @@ import {
 
 export const MyRequestsPage = () => {
   const navigate = useNavigate();
+  const { socket } = useSocket();
+  const { addToast } = useNotification();
   const [requests, setRequests] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [responding, setResponding] = useState(false);
 
   // Modals
   const [isNewBroadcastOpen, setIsNewBroadcastOpen] = useState(false);
   const [reserveTarget, setReserveTarget] = useState(null);
 
-  const fetchRequests = async () => {
-    setLoading(true);
+  const fetchRequests = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       const res = await requestService.getMyRequests();
       if (res.success) {
         setRequests(res.requests);
-        if (res.requests.length > 0 && !selectedRequest) {
-          setSelectedRequest(res.requests[0]);
-        } else if (selectedRequest) {
-          const updated = res.requests.find((r) => r._id === selectedRequest._id);
-          if (updated) setSelectedRequest(updated);
-        }
+        setSelectedRequest((current) => (
+          res.requests.find((request) => request._id === current?._id) || current || res.requests[0] || null
+        ));
       }
     } catch (err) {
       console.error('Error fetching requests:', err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchRequests();
-  }, []);
+    fetchRequests(true);
+  }, [fetchRequests]);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+    const refreshRequests = (event) => {
+      if (event?.requestId && !requests.some((request) => request._id === event.requestId)) return;
+      fetchRequests();
+    };
+    const refreshOnBroadcast = () => fetchRequests();
+    socket.on('new_broadcast_request', refreshOnBroadcast);
+    socket.on('request_updated', refreshRequests);
+    socket.on('request_response_received', refreshRequests);
+    return () => {
+      socket.off('new_broadcast_request', refreshOnBroadcast);
+      socket.off('request_updated', refreshRequests);
+      socket.off('request_response_received', refreshRequests);
+    };
+  }, [socket, requests, fetchRequests]);
+
+  const handleBargainResponse = async (payload) => {
+    setResponding(true);
+    try {
+      const result = await requestService.respondToBargain(selectedRequest._id, payload);
+      if (!result.success) {
+        addToast(result.message || 'Could not update your request', 'error');
+        return;
+      }
+      addToast(result.message, 'success');
+      await fetchRequests();
+    } catch (error) {
+      addToast(error.response?.data?.message || 'Could not update your request', 'error');
+    } finally {
+      setResponding(false);
+    }
+  };
 
   const handleChat = async (responseItem) => {
     try {
@@ -186,6 +222,8 @@ export const MyRequestsPage = () => {
                 responses={selectedRequest.responses || []}
                 onChat={handleChat}
                 onReserve={handleReserve}
+                onRespondToBargain={handleBargainResponse}
+                responding={responding}
               />
             ) : (
               <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center text-slate-400 text-xs">

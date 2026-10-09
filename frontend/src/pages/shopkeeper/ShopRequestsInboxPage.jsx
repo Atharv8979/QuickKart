@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { requestService } from '../../services/requestService';
+import { useSocket } from '../../context/SocketContext';
 import { IncomingRequestCard } from '../../components/shopkeeper/IncomingRequestCard';
 import { RespondModal } from '../../components/shopkeeper/RespondModal';
 import { Send, RefreshCw, Filter, Clock } from 'lucide-react';
 
 export const ShopRequestsInboxPage = () => {
+  const { socket } = useSocket();
   const [requests, setRequests] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [filter, setFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'RESPONDED'
@@ -27,6 +29,17 @@ export const ShopRequestsInboxPage = () => {
   useEffect(() => {
     fetchRequests();
   }, []);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+    const refreshRequests = () => fetchRequests();
+    socket.on('new_broadcast_request', refreshRequests);
+    socket.on('request_updated', refreshRequests);
+    return () => {
+      socket.off('new_broadcast_request', refreshRequests);
+      socket.off('request_updated', refreshRequests);
+    };
+  }, [socket]);
 
   const filteredRequests = requests.filter((r) => {
     if (filter === 'PENDING') return !r.myResponse;

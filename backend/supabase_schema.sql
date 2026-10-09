@@ -103,7 +103,9 @@ CREATE TABLE IF NOT EXISTS requests (
     expected_budget DOUBLE PRECISION,
     urgency VARCHAR(50) DEFAULT 'today' CHECK (urgency IN ('immediate', 'today', 'flexible')),
     notes TEXT,
-    status VARCHAR(50) DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'CLOSED', 'EXPIRED')),
+    status VARCHAR(50) DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'BARGAINING', 'ACCEPTED', 'REJECTED', 'CONFIRMED', 'CLOSED', 'EXPIRED')),
+    agreed_price DOUBLE PRECISION,
+    negotiation_history JSONB NOT NULL DEFAULT '[]'::JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

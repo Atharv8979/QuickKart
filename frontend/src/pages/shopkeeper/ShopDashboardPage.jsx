@@ -137,10 +137,12 @@ export const ShopDashboardPage = () => {
     socket.on('new_reservation', refreshLinkedOrders);
     socket.on('new_broadcast_request', refreshLinkedOrders);
     socket.on('reservation_updated', refreshLinkedOrders);
+    socket.on('request_updated', refreshLinkedOrders);
     return () => {
       socket.off('new_reservation', refreshLinkedOrders);
       socket.off('new_broadcast_request', refreshLinkedOrders);
       socket.off('reservation_updated', refreshLinkedOrders);
+      socket.off('request_updated', refreshLinkedOrders);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
@@ -208,10 +210,10 @@ export const ShopDashboardPage = () => {
       addToast(res.message || 'Counter offer sent', 'success');
       // Update local state in requests
       setRequests((prev) =>
-        prev.map((r) => (r.id === requestId || r._id === requestId ? res.request : r))
+        prev.map((r) => (r.id === requestId || r._id === requestId ? { ...r, ...res.request } : r))
       );
       if (bargainRequestTarget && (bargainRequestTarget.id === requestId || bargainRequestTarget._id === requestId)) {
-        setBargainRequestTarget(res.request);
+        setBargainRequestTarget((current) => ({ ...current, ...res.request }));
       }
       return res;
     }

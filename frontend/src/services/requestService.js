@@ -31,6 +31,11 @@ export const requestService = {
     return res.data;
   },
 
+  respondToBargain: async (requestId, data) => {
+    const res = await api.post(`/requests/${requestId}/customer-respond`, data);
+    return res.data;
+  },
+
   acceptRequest: async (requestId) => {
     const res = await api.post(`/requests/${requestId}/accept`);
     return res.data;

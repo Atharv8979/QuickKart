@@ -33,6 +33,8 @@ All Admin endpoints now have **direct Supabase queries** wired with:
    - PostGIS geometry trigger `update_shop_geom()`.
    - Seed data for admin, shopkeepers, and verified neighborhood stores.
 
+For an existing Supabase project, also run [`backend/migrations/request_bargaining.sql`](./migrations/request_bargaining.sql) in the SQL Editor. It adds persisted negotiation history and agreement price fields and permits accepted, rejected, and bargaining request statuses.
+
 ### Step 3: Configure Environment Variables
 1. In Supabase Dashboard, go to **Project Settings** &rarr; **API**.
 2. Copy your **Project URL** and your **`service_role` secret key** (under Project API keys).
