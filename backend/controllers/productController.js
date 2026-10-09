@@ -13,7 +13,8 @@ const DEMO_SHOP_IDS = new Set([
   'sehore-demo-001',
 ]);
 const scopeFallbackProductsToShopkeeper = (products, ownerId) => {
-  const ownedShop = FALLBACK_SHOPS.find((s) => s.owner_id === ownerId && !DEMO_SHOP_IDS.has(s._id || s.id));
+  // Never fall back to demo shops — only show products owned by this specific user
+  const ownedShop = FALLBACK_SHOPS.find((s) => s.owner_id === ownerId);
   if (!ownedShop) return [];
   const myShopId = String(ownedShop._id || ownedShop.id);
   return products.filter((p) => {

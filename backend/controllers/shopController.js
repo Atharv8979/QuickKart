@@ -269,6 +269,40 @@ export const getMyShop = async (req, res, next) => {
         .single();
 
       if (shop) {
+        // If this shop is a known demo shop ID, treat as new user (no seeded products)
+        const DEMO_SHOP_IDS = new Set([
+          'b0000000-0000-0000-0000-000000000001', // Sharma Hardware
+          'b0000000-0000-0000-0000-000000000002', // Gupta Building Materials
+        ]);
+        if (DEMO_SHOP_IDS.has(shop.id || shop._id)) {
+          // Return the shop metadata but WITHOUT seeded products - new user starts fresh
+          return res.json({
+            success: true,
+            shop: {
+              _id: shop.id,
+              id: shop.id,
+              shopName: shop.shop_name,
+              tagline: shop.tagline,
+              description: shop.description,
+              category: shop.category,
+              address: shop.address,
+              gstNumber: shop.address?.gstNumber || null,
+              tags: shop.address?.tags || (shop.category ? [shop.category] : []),
+              location: { coordinates: [shop.location_lng, shop.location_lat] },
+              contactPhone: shop.contact_phone,
+              bannerImage: shop.banner_image,
+              rating: shop.rating,
+              numReviews: shop.num_reviews,
+              verificationStatus: shop.verification_status,
+              liveServingCount: shop.live_serving_count,
+              estWaitTimeMinutes: shop.est_wait_time_minutes,
+              promptResponseRate: shop.prompt_response_rate,
+              products: [], // Empty - new user, no demo products
+            },
+          });
+        }
+
+        // Newly registered shopkeeper (not a demo shop): return their fresh shop with products
         return res.json({
           success: true,
           shop: {
@@ -294,27 +328,25 @@ export const getMyShop = async (req, res, next) => {
           },
         });
       }
+
+      // Shop not found in Supabase for this owner — fall through to demo/new user logic
     }
 
-    // Owner-matched shop lookup — skip hardcoded demo shops (they have fixed UUIDs)
-    // Only use generated fallbacks or shops created during registration
-    const DEMO_SHOP_IDS = new Set([
-      'b0000000-0000-0000-0000-000000000001',
-      'b0000000-0000-0000-0000-000000000002',
-      'b0000000-0000-0000-0000-000000000003',
-      'b0000000-0000-0000-0000-000000000004',
-      'sehore-demo-001',
-    ]);
+    // ---- Fallback logic for demo users or shopkeepers without a Supabase shop ----
+    // 1. Try to find a fallback shop that matches this user AND is NOT a demo owner
     let ownedFallback = FALLBACK_SHOPS.find(
-      (s) => s.owner_id === req.user.id && !DEMO_SHOP_IDS.has(s._id || s.id)
+      (s) => s.owner_id === req.user.id && !DEMO_OWNER_IDS.has(s.owner_id)
     ) || null;
+
+    // 2. If no matching non-demo fallback found AND user is a shopkeeper,
+    //    create a brand‑new fallback with empty products (never show demo items)
     if (!ownedFallback && req.user?.role === 'shopkeeper') {
       const generatedShopId = 'shop_' + req.user.id.substring(0, 10);
       ownedFallback = {
         _id: generatedShopId,
         id: generatedShopId,
         owner_id: req.user.id,
-        shopName: req.user.name ? `${req.user.name}'s Store` : 'My QuickKart Store',
+        shopName: req.user.name ? `${req.user.name}'s Store' : 'My QuickKart Store',
         tagline: 'Neighborhood Merchant Store',
         description: '',
         category: 'General Store',
@@ -335,6 +367,26 @@ export const getMyShop = async (req, res, next) => {
         promptResponseRate: 100,
         products: [],
       };
+      FALLBACK_SHOPS.unshift(ownedFallback);
+    }
+
+    // 3. If still no shop (e.g. demo customer or edge case), return null
+    if (!ownedFallback) {
+      return res.json({
+        success: true,
+        shop: null,
+        products: [],
+      });
+    }
+
+    res.json({
+      success: true,
+      shop: ownedFallback,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
       FALLBACK_SHOPS.unshift(ownedFallback);
     }
 
