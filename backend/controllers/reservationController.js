@@ -191,6 +191,7 @@ export const getCustomerReservations = async (req, res, next) => {
           _id: r.id,
           id: r.id,
           reservationCode: r.reservation_code,
+          customerId: r.customer_id,
           productName: r.product_name,
           quantity: r.quantity,
           unit: r.unit,

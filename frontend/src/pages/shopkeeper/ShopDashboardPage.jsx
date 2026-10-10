@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
@@ -42,6 +42,80 @@ import {
   Building2,
 } from 'lucide-react';
 
+const REQUEST_STATUS_PRIORITY = {
+  PENDING: 0,
+  ACTIVE: 0,
+  CLOSED: 0,
+  BARGAINING: 1,
+  REJECTED: 2,
+  ACCEPTED: 2,
+  CONFIRMING: 3,
+  CONFIRMED: 4,
+  READY: 4,
+  COMPLETED: 4,
+  DELIVERED: 4,
+};
+
+const linkCompletedReservations = (shopRequests, shopReservations) => {
+  const completedReservations = shopReservations.filter((reservation) =>
+    ['CONFIRMED', 'READY', 'COMPLETED', 'DELIVERED'].includes(
+      String(reservation.status || '').toUpperCase()
+    )
+  );
+
+  return shopRequests.map((request) => {
+    if (!['CLOSED', 'CONFIRMED', 'COMPLETED', 'DELIVERED'].includes(
+      String(request.status || '').toUpperCase()
+    )) {
+      return request;
+    }
+
+    const requestCustomerId =
+      request.customerId || request.customer_id || request.customer?.id || request.customer?._id;
+    const matchingReservation = completedReservations.find((reservation) => {
+      const reservationCustomerId =
+        reservation.customerId || reservation.customer_id || reservation.customer?.id || reservation.customer?._id;
+      return (
+        String(requestCustomerId || '') === String(reservationCustomerId || '') &&
+        String(request.productName || request.product_name || '').trim().toLowerCase() ===
+          String(reservation.productName || reservation.product_name || '').trim().toLowerCase()
+      );
+    });
+
+    return matchingReservation
+      ? {
+          ...request,
+          status: 'CONFIRMED',
+          reservationCode: matchingReservation.reservationCode || matchingReservation.reservation_code,
+          agreedPrice: request.agreedPrice ?? matchingReservation.agreedPrice ?? matchingReservation.agreed_price,
+        }
+      : request;
+  });
+};
+
+const preserveRequestProgress = (currentRequests, incomingRequests) => {
+  const currentById = new Map(
+    currentRequests.map((request) => [request.id || request._id, request])
+  );
+
+  return incomingRequests.map((request) => {
+    const previous = currentById.get(request.id || request._id);
+    if (
+      previous &&
+      (REQUEST_STATUS_PRIORITY[previous.status] ?? 0) >=
+        (REQUEST_STATUS_PRIORITY[request.status] ?? 0)
+    ) {
+      return {
+        ...request,
+        status: previous.status,
+        agreedPrice: previous.agreedPrice ?? request.agreedPrice,
+        reservationCode: previous.reservationCode ?? request.reservationCode,
+      };
+    }
+    return request;
+  });
+};
+
 export const ShopDashboardPage = () => {
   const { user } = useAuth();
   const { addToast } = useNotification();
@@ -57,6 +131,7 @@ export const ShopDashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState(null);
+  const requestFetchSequence = useRef(0);
 
   // Modals & Active Bargain Session
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
@@ -68,6 +143,7 @@ export const ShopDashboardPage = () => {
   const [requestFilter, setRequestFilter] = useState('ALL');
 
   const fetchDashboardData = async (isInitial = false) => {
+    const requestFetchId = ++requestFetchSequence.current;
     if (isInitial) setLoading(true);
     else setRefreshing(true);
 
@@ -88,11 +164,15 @@ export const ShopDashboardPage = () => {
         currentShop = shopRes.shop;
         setShop(shopRes.shop);
       }
-      if (reqRes.success) {
-        setRequests(reqRes.requests || []);
-      }
       if (resRes.success) {
         setReservations(resRes.reservations || []);
+      }
+      if (reqRes.success && requestFetchId === requestFetchSequence.current) {
+        const linkedRequests = linkCompletedReservations(
+          reqRes.requests || [],
+          resRes.success ? resRes.reservations || [] : []
+        );
+        setRequests((current) => preserveRequestProgress(current, linkedRequests));
       }
 
       // Network shops: ONLY live backend shops (no demo shops for shopkeeper dashboard)
@@ -180,6 +260,13 @@ export const ShopDashboardPage = () => {
       const res = await requestService.acceptRequest(requestId);
       if (res.success) {
         addToast(res.message || 'Customer offer accepted!', 'success');
+        setRequests((current) =>
+          current.map((request) =>
+            (request.id || request._id) === requestId
+              ? { ...request, ...res.request, status: 'ACCEPTED' }
+              : request
+          )
+        );
         fetchDashboardData();
       }
     } catch (err) {
@@ -195,6 +282,13 @@ export const ShopDashboardPage = () => {
       const res = await requestService.rejectRequest(requestId);
       if (res.success) {
         addToast(res.message || 'Request declined', 'info');
+        setRequests((current) =>
+          current.map((request) =>
+            (request.id || request._id) === requestId
+              ? { ...request, ...res.request, status: 'REJECTED' }
+              : request
+          )
+        );
         fetchDashboardData();
       }
     } catch (err) {
@@ -221,14 +315,66 @@ export const ShopDashboardPage = () => {
 
   const handleConfirmBargainDeal = async (target) => {
     const targetId = target.id || target._id;
+    setRequests((current) =>
+      current.map((request) =>
+        (request.id || request._id) === targetId
+          ? { ...request, ...target, status: 'CONFIRMING' }
+          : request
+      )
+    );
+    setActionLoadingId(targetId);
     try {
       const res = await requestService.confirmBargainDeal(targetId, target);
       if (res.success) {
         addToast(res.message || 'Bargain deal confirmed into official reservation order!', 'success');
+        const confirmedRequest = {
+          ...target,
+          ...(res.request || {}),
+          status: 'CONFIRMED',
+          reservationCode:
+            res.reservation?.reservationCode ||
+            res.request?.reservationCode ||
+            target.reservationCode,
+        };
+        setRequests((current) =>
+          current.map((request) =>
+            (request.id || request._id) === targetId
+              ? { ...request, ...confirmedRequest }
+              : request
+          )
+        );
+        if (res.reservation) {
+          setReservations((current) => [
+            res.reservation,
+            ...current.filter(
+              (reservation) =>
+                (reservation.id || reservation._id) !==
+                (res.reservation.id || res.reservation._id)
+            ),
+          ]);
+        }
         fetchDashboardData();
+      } else {
+        setRequests((current) =>
+          current.map((request) =>
+            (request.id || request._id) === targetId && request.status === 'CONFIRMING'
+              ? { ...request, ...target }
+              : request
+          )
+        );
+        addToast(res.message || 'Failed to confirm bargain order', 'error');
       }
     } catch (err) {
+      setRequests((current) =>
+        current.map((request) =>
+          (request.id || request._id) === targetId && request.status === 'CONFIRMING'
+            ? { ...request, ...target }
+            : request
+        )
+      );
       addToast(err.response?.data?.message || 'Failed to confirm bargain order', 'error');
+    } finally {
+      setActionLoadingId(null);
     }
   };
 

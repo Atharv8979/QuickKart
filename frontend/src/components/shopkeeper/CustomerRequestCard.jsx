@@ -62,8 +62,11 @@ export const CustomerRequestCard = ({
   const isPending = status === 'PENDING';
   const isBargaining = status === 'BARGAINING';
   const isAccepted = status === 'ACCEPTED';
+  const isConfirming = status === 'CONFIRMING';
   const isRejected = status === 'REJECTED';
-  const isConfirmed = status === 'CONFIRMED';
+  const isConfirmed = ['CONFIRMED', 'READY', 'COMPLETED', 'DELIVERED'].includes(
+    String(status).toUpperCase()
+  );
 
   const priceDiff = currentPrice - customerOffer;
   const discountPct = currentPrice > 0 ? Math.round((priceDiff / currentPrice) * 100) : 0;
@@ -131,12 +134,17 @@ export const CustomerRequestCard = ({
             )}
             {isConfirmed && (
               <span className="bg-purple-100 text-purple-800 text-[11px] font-black px-2 py-0.5 rounded-full border border-purple-300 flex items-center gap-1">
-                <Package className="w-3 h-3 text-purple-600" /> Order Confirmed
+                <Check className="w-3 h-3 text-purple-600" /> Offer Completed
+              </span>
+            )}
+            {isConfirming && (
+              <span className="bg-violet-100 text-violet-800 text-[11px] font-black px-2 py-0.5 rounded-full border border-violet-300 flex items-center gap-1">
+                <Package className="w-3 h-3" /> Issuing Ticket
               </span>
             )}
             {isRejected && (
               <span className="bg-slate-100 text-slate-500 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-200">
-                Declined
+                Offer Declined
               </span>
             )}
 
@@ -311,25 +319,32 @@ export const CustomerRequestCard = ({
               <span className="hidden sm:inline">Chat</span>
             </button>
           </div>
+        ) : isConfirming ? (
+          <div className="bg-violet-50 border border-violet-200 rounded-xl p-2 text-center text-xs font-bold text-violet-700 animate-pulse">
+            Issuing pickup ticket…
+          </div>
         ) : isAccepted ? (
-          <div className="flex items-center justify-between gap-2 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
-            <div className="text-xs">
-              <span className="font-bold text-emerald-900 block">
-                Agreed at ₹{request.agreedPrice || customerOffer} / unit
-              </span>
-              <span className="text-[11px] text-emerald-700">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Agreed</span>
+                <span className="text-emerald-700">₹{(request.agreedPrice || customerOffer).toLocaleString('en-IN')} / unit</span>
+              </div>
+              <div className="text-[10px] font-semibold text-slate-500">
                 Total: ₹{((request.agreedPrice || customerOffer) * quantity).toLocaleString('en-IN')}
-              </span>
+              </div>
             </div>
             <button
               onClick={() => onConfirmOrder && onConfirmOrder(request)}
-              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-sm flex items-center gap-1"
+              disabled={actionLoading}
+              className="w-full px-3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-wait text-white font-black text-xs shadow-sm flex items-center justify-center gap-1.5"
             >
-              Confirm Order <ArrowRight className="w-3.5 h-3.5" />
+              <span>{actionLoading ? 'Confirming Order…' : 'Confirm Order'}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         ) : isConfirmed ? (
-          <div className="text-xs font-bold text-purple-700 bg-purple-50 p-2 rounded-xl border border-purple-200 text-center">
+          <div className="bg-violet-50 border border-violet-200 rounded-xl p-2 text-center text-xs font-bold text-violet-800 shadow-inner shadow-violet-100">
             Ticket #{request.reservationCode || 'QK-DONE'} • In Pickup Queue
           </div>
         ) : (
