@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLocation } from '../../context/LocationContext';
 import {
@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   TrendingUp,
 } from 'lucide-react';
+import { chatService } from '../../services/chatService';
 import { BroadcastRequestModal } from '../../components/customer/BroadcastRequestModal';
 
 export const LandingPage = () => {
@@ -49,6 +50,25 @@ export const LandingPage = () => {
     if (roleKey === 'customer') navigate('/customer/search');
     else if (roleKey === 'sharma' || roleKey === 'gupta') navigate('/shop/dashboard');
     else if (roleKey === 'admin') navigate('/admin/dashboard');
+  };
+
+  const handleStartChat = async () => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+    try {
+      const res = await chatService.getOrCreateConversation({
+        shopId: null,
+        productName: 'QuickKart Store',
+        price: 0,
+      });
+      if (res.success) {
+        navigate(`/customer/messages?c=${res.conversation._id}`);
+      }
+    } catch (err) {
+      console.error('Error opening chat:', err);
+    }
   };
 
   return (
@@ -100,6 +120,14 @@ export const LandingPage = () => {
                 >
                   <Search className="w-4 h-4" />
                   Find Nearby
+                </button>
+                <button
+                  onClick={handleStartChat}
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold shadow-md transition-all flex items-center justify-center gap-1.5"
+                  title="Start a chat with a store"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  Chat
                 </button>
               </div>
             </form>
