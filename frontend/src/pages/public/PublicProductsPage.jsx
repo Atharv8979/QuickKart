@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useLocation } from '../../context/LocationContext';
 import { productService } from '../../services/productService';
+import { chatService } from '../../services/chatService';
+import { useAuth } from '../../context/AuthContext';
 import { ProductCard } from '../../components/customer/ProductCard';
 import { ReservationModal } from '../../components/customer/ReservationModal';
 import { Package, Search, RefreshCw, Filter, ShoppingBag } from 'lucide-react';
@@ -10,6 +12,7 @@ export const PublicProductsPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { coordinates, radiusKm } = useLocation();
+  const { isAuthenticated } = useAuth();
 
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState(searchParams.get('q') || '');
@@ -52,6 +55,25 @@ export const PublicProductsPage = () => {
   useEffect(() => {
     fetchProducts();
   }, [coordinates, radiusKm, selectedCategory, sortBy]);
+
+  const handleStartChat = async (product) => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+    try {
+      const res = await chatService.getOrCreateConversation({
+        shopId: product.shopId._id || product.shopId,
+        productName: product.name,
+        price: product.price,
+      });
+      if (res.success) {
+        navigate(`/customer/messages?c=${res.conversation._id}`);
+      }
+    } catch (err) {
+      console.error('Error opening chat:', err);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -135,7 +157,7 @@ export const PublicProductsPage = () => {
               key={p._id}
               product={p}
               onReserveClick={(item) => setReserveTarget(item)}
-              onChatClick={() => navigate('/customer/messages')}
+              onChatClick={() => handleStartChat(p)}
             />
           ))}
         </div>
