@@ -388,10 +388,12 @@ export const getShopRelevantRequests = async (req, res, next) => {
           .from('shops')
           .select('id, category, products(*)')
           .eq('owner_id', req.user.id)
-          .single();
+          .maybeSingle();
         if (myShop) {
           shopCategory = myShop.category;
           shopProducts = myShop.products || [];
+        } else if (req.user.role !== 'admin') {
+          return res.json({ success: true, count: 0, requests: [] });
         }
       }
 
@@ -400,8 +402,14 @@ export const getShopRelevantRequests = async (req, res, next) => {
         .select('*, customer:users(id, name, phone)')
         .order('created_at', { ascending: false });
 
-      if (shopCategory && req.query.filterByCategory === 'true') {
-        query = query.eq('category', shopCategory);
+      if (shopCategory && req.user.role !== 'admin') {
+        const allowedCategories = [shopCategory];
+        if (shopCategory === 'Hardware & Tools') allowedCategories.push('Plumbing & Sanitary');
+        else if (shopCategory === 'Plumbing & Sanitary') allowedCategories.push('Hardware & Tools');
+        else if (shopCategory === 'General Store' || shopCategory === 'Groceries & Daily Essentials') {
+          allowedCategories.push('Groceries & Daily Essentials', 'General Store');
+        }
+        query = query.in('category', allowedCategories);
       }
 
       const { data: requests, error } = await query;
@@ -428,6 +436,8 @@ export const getShopRelevantRequests = async (req, res, next) => {
             customerPhone: r.customer?.phone || '+91 9876543210',
             notes: r.notes || '',
             createdAt: r.created_at,
+            customerId: r.customer_id,
+            customer: { id: r.customer_id, name: r.customer?.name, phone: r.customer?.phone },
             negotiationHistory: [
               {
                 sender: 'customer',
@@ -457,25 +467,29 @@ export const getShopRelevantRequests = async (req, res, next) => {
       'sehore-demo-001',
     ]);
     const isDemoSharma = req.user?.id === 'a0000000-0000-0000-0000-000000000002';
-    const ownedShop = (FALLBACK_SHOPS || []).find((s) => s.owner_id === req.user?.id && !DEMO_SHOP_IDS.has(s._id || s.id));
+    const ownedShop = (FALLBACK_SHOPS || []).find((s) => s.owner_id === req.user?.id);
     const ownedCategory = ownedShop?.category || null;
+
+    if (!ownedShop && req.user?.role !== 'admin') {
+      return res.json({ success: true, count: 0, requests: [] });
+    }
 
     let scoped = [];
     if (isDemoSharma) {
-      // Demo Sharma sees demo Karol Bagh fixtures for exhibition walkthrough
       scoped = (FALLBACK_CUSTOMER_REQUESTS || []).filter((r) => {
         if (!ownedCategory) return true;
         return (r.category || '') === ownedCategory || String(r._id || r.id || '').startsWith('req_');
       });
     } else {
-      // Real registered shopkeeper: only show requests freshly broadcasted this session
-      // matching their category, NEVER pre-seeded demo fixtures.
       scoped = (FALLBACK_CUSTOMER_REQUESTS || []).filter((r) => {
-        const idStr = String(r._id || r.id || '');
-        const isFresh = idStr.startsWith('req_') && !idStr.startsWith('req_cust_');
-        if (!isFresh) return false;
         if (!ownedCategory) return true;
-        return (r.category || '') === ownedCategory;
+        const allowedCategories = [ownedCategory];
+        if (ownedCategory === 'Hardware & Tools') allowedCategories.push('Plumbing & Sanitary');
+        else if (ownedCategory === 'Plumbing & Sanitary') allowedCategories.push('Hardware & Tools');
+        else if (ownedCategory === 'General Store' || ownedCategory === 'Groceries & Daily Essentials') {
+          allowedCategories.push('Groceries & Daily Essentials', 'General Store');
+        }
+        return allowedCategories.includes(r.category);
       });
     }
 

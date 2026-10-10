@@ -434,12 +434,12 @@ export let FALLBACK_PRODUCTS = [
     images: ['https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=600&q=80'],
     tags: ['milk', 'amul', 'dairy', 'daily'],
     shopId: {
-      _id: 'b0000000-0000-0000-0000-000000000001',
-      id: 'b0000000-0000-0000-0000-000000000001',
-      shopName: 'Sharma Hardware & Daily Essentials Store',
-      rating: 4.9,
-      address: { street: 'Shop 14, Block 8, Ajmal Khan Road', area: 'Karol Bagh', city: 'New Delhi' },
-      location: { coordinates: [77.1906, 28.6517] }
+      _id: 'sehore-demo-001',
+      id: 'sehore-demo-001',
+      shopName: 'Kothri Kalan Kirana & General Store',
+      rating: 4.6,
+      address: { street: 'Main Village Road', area: 'Kothri Kalan', city: 'Sehore' },
+      location: { coordinates: [76.8298, 23.074] }
     }
   },
   {
@@ -459,12 +459,12 @@ export let FALLBACK_PRODUCTS = [
     images: ['https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=600&q=80'],
     tags: ['atta', 'flour', 'wheat', 'groceries'],
     shopId: {
-      _id: 'b0000000-0000-0000-0000-000000000001',
-      id: 'b0000000-0000-0000-0000-000000000001',
-      shopName: 'Sharma Hardware & Daily Essentials Store',
-      rating: 4.9,
-      address: { street: 'Shop 14, Block 8, Ajmal Khan Road', area: 'Karol Bagh', city: 'New Delhi' },
-      location: { coordinates: [77.1906, 28.6517] }
+      _id: 'sehore-demo-001',
+      id: 'sehore-demo-001',
+      shopName: 'Kothri Kalan Kirana & General Store',
+      rating: 4.6,
+      address: { street: 'Main Village Road', area: 'Kothri Kalan', city: 'Sehore' },
+      location: { coordinates: [76.8298, 23.074] }
     }
   },
   {
@@ -484,12 +484,12 @@ export let FALLBACK_PRODUCTS = [
     images: ['https://images.unsplash.com/photo-1518110925495-5fe2fda0442c?auto=format&fit=crop&w=600&q=80'],
     tags: ['salt', 'tata', 'iodised', 'groceries'],
     shopId: {
-      _id: 'b0000000-0000-0000-0000-000000000001',
-      id: 'b0000000-0000-0000-0000-000000000001',
-      shopName: 'Sharma Hardware & Daily Essentials Store',
-      rating: 4.9,
-      address: { street: 'Shop 14, Block 8, Ajmal Khan Road', area: 'Karol Bagh', city: 'New Delhi' },
-      location: { coordinates: [77.1906, 28.6517] }
+      _id: 'sehore-demo-001',
+      id: 'sehore-demo-001',
+      shopName: 'Kothri Kalan Kirana & General Store',
+      rating: 4.6,
+      address: { street: 'Main Village Road', area: 'Kothri Kalan', city: 'Sehore' },
+      location: { coordinates: [76.8298, 23.074] }
     }
   },
   {
@@ -509,12 +509,12 @@ export let FALLBACK_PRODUCTS = [
     images: ['https://images.unsplash.com/photo-1558961363-fa8fdf82db35?auto=format&fit=crop&w=600&q=80'],
     tags: ['biscuits', 'parle-g', 'snacks'],
     shopId: {
-      _id: 'b0000000-0000-0000-0000-000000000001',
-      id: 'b0000000-0000-0000-0000-000000000001',
-      shopName: 'Sharma Hardware & Daily Essentials Store',
-      rating: 4.9,
-      address: { street: 'Shop 14, Block 8, Ajmal Khan Road', area: 'Karol Bagh', city: 'New Delhi' },
-      location: { coordinates: [77.1906, 28.6517] }
+      _id: 'sehore-demo-001',
+      id: 'sehore-demo-001',
+      shopName: 'Kothri Kalan Kirana & General Store',
+      rating: 4.6,
+      address: { street: 'Main Village Road', area: 'Kothri Kalan', city: 'Sehore' },
+      location: { coordinates: [76.8298, 23.074] }
     }
   },
   {

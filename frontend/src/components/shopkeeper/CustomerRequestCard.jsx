@@ -1,4 +1,6 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import { chatService } from '../../services/chatService';
 import {
   Clock,
   Check,
@@ -10,6 +12,7 @@ import {
   AlertCircle,
   Sparkles,
   ArrowRight,
+  MessageSquare,
 } from 'lucide-react';
 
 export const CustomerRequestCard = ({
@@ -20,6 +23,7 @@ export const CustomerRequestCard = ({
   onConfirmOrder,
   actionLoading = false,
 }) => {
+  const navigate = useNavigate();
   const {
     id,
     _id,
@@ -34,9 +38,25 @@ export const CustomerRequestCard = ({
     status = 'PENDING',
     createdAt,
     customerName = 'Customer',
+    customerId,
     notes,
     negotiationHistory = [],
   } = request;
+
+  const handleOpenChat = async () => {
+    try {
+      const targetId = customerId || request.customer?._id || request.customer?.id;
+      if (targetId) {
+        await chatService.getOrCreateConversation({
+          shopId: targetId,
+          productName: `Inquiry: ${productName}`,
+        });
+      }
+      navigate('/shopkeeper/messages');
+    } catch {
+      navigate('/shopkeeper/messages');
+    }
+  };
 
   const reqId = id || _id;
   const isPending = status === 'PENDING';
@@ -278,6 +298,17 @@ export const CustomerRequestCard = ({
             >
               <span className="text-sm">⚖️</span>
               <span>Bargain</span>
+            </button>
+
+            {/* Live Chat Button */}
+            <button
+              onClick={handleOpenChat}
+              disabled={actionLoading}
+              title="Chat with Customer"
+              className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-brand-600 text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-1"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Chat</span>
             </button>
           </div>
         ) : isAccepted ? (

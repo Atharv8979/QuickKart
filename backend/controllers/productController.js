@@ -21,7 +21,7 @@ const DEMO_CATEGORIES = new Set([
 
 const scopeFallbackProductsToShopkeeper = (products, ownerId) => {
   // Never fall back to demo shops — only show products owned by this specific user
-  const ownedShop = FALLBACK_SHOPS.find((s) => s.owner_id === ownerId && !DEMO_SHOP_IDS.has(s._id || s.id));
+  const ownedShop = FALLBACK_SHOPS.find((s) => s.owner_id === ownerId);
   if (!ownedShop) return [];
   const myShopId = String(ownedShop._id || ownedShop.id);
   const myCategory = ownedShop.category || '';
@@ -64,7 +64,7 @@ export const getProducts = async (req, res, next) => {
           .from('shops')
           .select('id')
           .eq('owner_id', req.user.id)
-          .single();
+          .maybeSingle();
         if (myShopRow?.id) {
           query = query.eq('shop_id', myShopRow.id);
         } else {
