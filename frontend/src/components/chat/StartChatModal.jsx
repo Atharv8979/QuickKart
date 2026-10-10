@@ -5,12 +5,14 @@ import { reservationService } from '../../services/reservationService';
 import { chatService } from '../../services/chatService';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
+import { useLocation } from '../../context/LocationContext';
 import { Modal } from '../common/Modal';
 import { Search, Store, User, MessageSquare, Loader2, ArrowRight, Sparkles, MapPin, Tag } from 'lucide-react';
 
 export const StartChatModal = ({ isOpen, onClose, onSelectConversation }) => {
   const { user } = useAuth();
   const { addToast } = useNotification();
+  const { coordinates, radiusKm } = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [startingChatId, setStartingChatId] = useState(null);
@@ -25,19 +27,39 @@ export const StartChatModal = ({ isOpen, onClose, onSelectConversation }) => {
       setLoading(true);
       try {
         if (user?.role === 'customer') {
-          // Fetch shops for customer to message
-          const res = await shopService.getNearbyShops({ limit: 50 });
+          // Fetch shops according to user's selected location & radius
+          const res = await shopService.getNearbyShops({
+            lng: coordinates?.[0] || 77.1906,
+            lat: coordinates?.[1] || 28.6517,
+            radius: Math.max(radiusKm || 10, 50),
+            limit: 100,
+          });
           if (res.success) {
             setItems(res.shops || []);
           }
         } else {
-          // Fetch customer inquiries / requests / reservations for shopkeeper to message
-          const [reqRes, resRes] = await Promise.all([
+          // Fetch customer inquiries / requests / reservations / conversations for shopkeeper
+          const [reqRes, resRes, convRes] = await Promise.all([
             requestService.getShopRelevantRequests().catch(() => ({ success: false })),
             reservationService.getShopReservations().catch(() => ({ success: false })),
+            chatService.getConversations().catch(() => ({ success: false })),
           ]);
 
           const combinedMap = new Map();
+          if (convRes.success && convRes.conversations) {
+            convRes.conversations.forEach((c) => {
+              const cust = c.customer || c.customerId;
+              if (cust?.name) {
+                combinedMap.set(cust.name, {
+                  id: cust.id || cust._id,
+                  name: cust.name,
+                  phone: cust.phone || '',
+                  subtitle: `Active Chat: ${c.productContext?.productName || 'Customer Direct Chat'}`,
+                  type: 'chat',
+                });
+              }
+            });
+          }
           if (reqRes.success && reqRes.requests) {
             reqRes.requests.forEach((r) => {
               if (r.customerName) {

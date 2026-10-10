@@ -49,7 +49,14 @@ export const getConversations = async (req, res, next) => {
     if (userRole === 'customer') {
       query = query.eq('customer_id', userId);
     } else if (userRole === 'shopkeeper') {
-      query = query.eq('shop_id', req.user.shopId || req.user.id);
+      const { data: myShop } = await supabase
+        .from('shops')
+        .select('id')
+        .eq('owner_id', userId)
+        .single();
+
+      const shopId = myShop ? myShop.id : userId;
+      query = query.or(`shop_id.eq.${shopId},shop_id.eq.${userId}`);
     }
 
     const { data: conversations, error } = await query;
@@ -127,7 +134,13 @@ export const getOrCreateConversation = async (req, res, next) => {
       customerId = userId;
       shopIdFinal = shopId;
     } else if (userRole === 'shopkeeper') {
-      shopIdFinal = req.user.shopId || req.user.id;
+      const { data: myShop } = await supabase
+        .from('shops')
+        .select('id')
+        .eq('owner_id', userId)
+        .single();
+
+      shopIdFinal = myShop ? myShop.id : (req.user.shopId || req.user.id);
       customerId = shopId; // In this case shopId param is actually customerId
     } else {
       return res.status(403).json({ success: false, message: 'Only customers and shopkeepers can start conversations' });
@@ -267,8 +280,19 @@ export const getMessages = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Conversation not found' });
     }
 
-    const hasAccess = (userRole === 'customer' && conv.customer_id === userId) ||
-                      (userRole === 'shopkeeper' && conv.shop_id === userId);
+    let shopId = userId;
+    if (userRole === 'shopkeeper') {
+      const { data: myShop } = await supabase
+        .from('shops')
+        .select('id')
+        .eq('owner_id', userId)
+        .single();
+      if (myShop) shopId = myShop.id;
+    }
+
+    const hasAccess =
+      (userRole === 'customer' && conv.customer_id === userId) ||
+      (userRole === 'shopkeeper' && (conv.shop_id === shopId || conv.shop_id === userId));
 
     if (!hasAccess) {
       return res.status(403).json({ success: false, message: 'Not authorized' });

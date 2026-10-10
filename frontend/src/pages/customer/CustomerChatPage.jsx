@@ -5,9 +5,12 @@ import { ChatWindow } from '../../components/chat/ChatWindow';
 import { StartChatModal } from '../../components/chat/StartChatModal';
 import { MessageSquare, Store, Search, RefreshCw, Plus, MessageSquarePlus } from 'lucide-react';
 
+import { useSocket } from '../../context/SocketContext';
+
 export const CustomerChatPage = () => {
   const [searchParams] = useSearchParams();
   const initialConvId = searchParams.get('c');
+  const { socket } = useSocket();
 
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
@@ -38,6 +41,19 @@ export const CustomerChatPage = () => {
   useEffect(() => {
     fetchConversations();
   }, [initialConvId]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleLiveMsg = () => fetchConversations();
+    socket.on('new_message', handleLiveMsg);
+    socket.on('chat_notification', handleLiveMsg);
+    socket.on('new_image_message', handleLiveMsg);
+    return () => {
+      socket.off('new_message', handleLiveMsg);
+      socket.off('chat_notification', handleLiveMsg);
+      socket.off('new_image_message', handleLiveMsg);
+    };
+  }, [socket]);
 
   const filteredConversations = conversations.filter((conv) => {
     const q = searchQuery.toLowerCase();
