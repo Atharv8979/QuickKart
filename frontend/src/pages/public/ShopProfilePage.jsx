@@ -7,9 +7,8 @@ import { useLocation } from '../../context/LocationContext';
 import { CustomerInventoryBoard } from '../../components/customer/CustomerInventoryBoard';
 import { ReservationModal } from '../../components/customer/ReservationModal';
 import { BroadcastRequestModal } from '../../components/customer/BroadcastRequestModal';
-import { StarRating } from '../../components/common/StarRating';
-import { Badge } from '../../components/common/Badge';
 import { getSehoreDemoData } from '../../components/customer/sehoreDemoData';
+import { ShopReviews } from '../../components/shop/ShopReviews';
 import {
   Store,
   MapPin,
@@ -33,7 +32,6 @@ export const ShopProfilePage = () => {
 
   const [shop, setShop] = useState(null);
   const [products, setProducts] = useState([]);
-  const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [reserveTarget, setReserveTarget] = useState(null);
@@ -50,7 +48,6 @@ export const ShopProfilePage = () => {
         if (demoShop) {
           setShop(demoShop);
           setProducts(demo.products.filter((p) => (p.shopId?._id || p.shopId) === id));
-          setReviews([]);
           setLoading(false);
           return;
         }
@@ -63,13 +60,11 @@ export const ShopProfilePage = () => {
         if (res.success) {
           setShop(res.shop);
           setProducts(Array.isArray(res.products) ? res.products : []);
-          setReviews(Array.isArray(res.reviews) ? res.reviews : []);
         }
       } catch (err) {
         console.error('Error loading shop profile:', err);
         setShop(null);
         setProducts([]);
-        setReviews([]);
       } finally {
         setLoading(false);
       }
@@ -299,64 +294,7 @@ export const ShopProfilePage = () => {
           </div>
 
           {/* Reviews */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black text-slate-900">
-                Customer Ratings & Reviews ({reviews.length})
-              </h3>
-              <div className="flex items-center gap-1 font-bold text-amber-900 bg-amber-50 px-2.5 py-1 rounded-xl text-xs">
-                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                {shop.rating?.toFixed(1)} Overall
-              </div>
-            </div>
-
-            {reviews.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">
-                No customer reviews yet. Be the first to review after your in-store purchase!
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {reviews.map((rev) => (
-                  <div
-                    key={rev._id}
-                    className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2 text-xs"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <img
-                          src={
-                            rev.customerId?.profileImage ||
-                            'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80'
-                          }
-                          alt={rev.customerId?.name}
-                          className="w-7 h-7 rounded-full object-cover"
-                        />
-                        <span className="font-bold text-slate-800">
-                          {rev.customerId?.name || 'Verified Customer'}
-                        </span>
-                      </div>
-                      <StarRating rating={rev.rating} />
-                    </div>
-
-                    <p className="text-slate-700 italic">"{rev.comment}"</p>
-
-                    {rev.tags && rev.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 pt-1">
-                        {rev.tags.map((t) => (
-                          <span
-                            key={t}
-                            className="bg-amber-100 text-amber-800 text-[10px] font-semibold px-2 py-0.5 rounded-md"
-                          >
-                            ✓ {t}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <ShopReviews shopId={shop._id} />
         </div>
       </div>
 

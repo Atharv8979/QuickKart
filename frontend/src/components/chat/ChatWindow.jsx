@@ -198,6 +198,16 @@ export const ChatWindow = ({ conversation, onBack }) => {
     try {
       const res = await chatService.sendMessage(conversation._id, { text: textToSend });
       if (res.success) {
+        // Also emit via socket for real-time to other participants
+        if (socket) {
+          socket.emit('send_message', {
+            conversationId: conversation._id,
+            text: textToSend,
+            senderId: user?._id || user?.id,
+            senderName: user?.name || 'Someone',
+            senderRole: user?.role || 'customer',
+          });
+        }
         setMessages((prev) => {
           if (prev.some((m) => m._id === res.message._id)) return prev;
           return [...prev, res.message];

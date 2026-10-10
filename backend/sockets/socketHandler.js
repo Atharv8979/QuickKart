@@ -41,6 +41,20 @@ export const initializeSocket = (io) => {
       }
     });
 
+    // Handle text message - forward to conversation room
+    socket.on('send_message', ({ conversationId, text, senderId, senderName, senderRole }) => {
+      if (conversationId && text) {
+        socket.to(`conversation_${conversationId}`).emit('new_message', {
+          conversationId,
+          text,
+          senderId,
+          senderName,
+          senderRole,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    });
+
     // Handle image message - forward to conversation room
     socket.on('send_image', ({ conversationId, imageUrl, thumbnailUrl, senderName }) => {
       if (conversationId && imageUrl) {

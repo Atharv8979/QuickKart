@@ -21,6 +21,7 @@ import { ShopProfilePage } from './pages/public/ShopProfilePage';
 // Customer Pages
 import { DiscoverFeed } from './pages/customer/DiscoverFeed';
 import { MyRequestsPage } from './pages/customer/MyRequestsPage';
+import { MyReviewsPage } from './pages/customer/MyReviewsPage';
 import { ReservationsPage } from './pages/customer/ReservationsPage';
 import { CustomerChatPage } from './pages/customer/CustomerChatPage';
 import { CustomerProfilePage } from './pages/customer/CustomerProfilePage';
@@ -137,6 +138,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['customer']} targetPersona="customer">
                 <ReservationsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/customer/reviews"
+            element={
+              <ProtectedRoute allowedRoles={['customer']} targetPersona="customer">
+                <MyReviewsPage />
               </ProtectedRoute>
             }
           />
