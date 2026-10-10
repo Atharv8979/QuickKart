@@ -27,6 +27,8 @@ import { CustomerChatPage } from './pages/customer/CustomerChatPage';
 import { CustomerProfilePage } from './pages/customer/CustomerProfilePage';
 import { GoalPlannerPage } from './pages/customer/GoalPlannerPage';
 import { DiagnosticSearchPage } from './pages/customer/DiagnosticSearchPage';
+import { CustomerPaymentsPage } from './pages/customer/CustomerPaymentsPage';
+import { CustomerDeliveriesPage } from './pages/customer/CustomerDeliveriesPage';
 
 // Shopkeeper Pages
 import { ShopDashboardPage } from './pages/shopkeeper/ShopDashboardPage';
@@ -35,6 +37,8 @@ import { ShopRequestsInboxPage } from './pages/shopkeeper/ShopRequestsInboxPage'
 import { ShopReservationsPage } from './pages/shopkeeper/ShopReservationsPage';
 import { ShopMessagesPage } from './pages/shopkeeper/ShopMessagesPage';
 import { ShopProfileEditPage } from './pages/shopkeeper/ShopProfileEditPage';
+import { ShopPaymentsPage } from './pages/shopkeeper/ShopPaymentsPage';
+import { ShopDeliveriesPage } from './pages/shopkeeper/ShopDeliveriesPage';
 
 // Admin Pages
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
@@ -165,6 +169,22 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/customer/payments"
+            element={
+              <ProtectedRoute allowedRoles={['customer']} targetPersona="customer">
+                <CustomerPaymentsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/customer/deliveries"
+            element={
+              <ProtectedRoute allowedRoles={['customer']} targetPersona="customer">
+                <CustomerDeliveriesPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Shopkeeper Routes (Chapter 10.4) */}
           <Route
@@ -212,6 +232,22 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['shopkeeper']} targetPersona="sharma">
                 <ShopMessagesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/shop/payments"
+            element={
+              <ProtectedRoute allowedRoles={['shopkeeper']} targetPersona="sharma">
+                <ShopPaymentsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/shop/deliveries"
+            element={
+              <ProtectedRoute allowedRoles={['shopkeeper']} targetPersona="sharma">
+                <ShopDeliveriesPage />
               </ProtectedRoute>
             }
           />

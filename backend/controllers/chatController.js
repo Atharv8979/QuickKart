@@ -415,8 +415,19 @@ export const sendMessage = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Conversation not found' });
     }
 
-    const hasAccess = (userRole === 'customer' && conv.customer_id === userId) ||
-                      (userRole === 'shopkeeper' && conv.shop_id === userId);
+    let shopId = userId;
+    if (userRole === 'shopkeeper') {
+      const { data: myShop } = await supabase
+        .from('shops')
+        .select('id')
+        .eq('owner_id', userId)
+        .maybeSingle();
+      if (myShop) shopId = myShop.id;
+    }
+
+    const hasAccess =
+      (userRole === 'customer' && conv.customer_id === userId) ||
+      (userRole === 'shopkeeper' && (conv.shop_id === shopId || conv.shop_id === userId));
 
     if (!hasAccess) {
       return res.status(403).json({ success: false, message: 'Not authorized' });
@@ -453,8 +464,8 @@ export const sendMessage = async (req, res, next) => {
         last_message_text: text || (messageType === 'image' ? '📷 Image' : 'Message'),
         last_message_at: new Date().toISOString(),
         last_message_sender_id: userId,
-        unread_count_customer: userRole === 'shopkeeper' ? conv.unread_count_customer + 1 : conv.unread_count_customer,
-        unread_count_shop: userRole === 'customer' ? conv.unread_count_shop + 1 : conv.unread_count_shop,
+        unread_count_customer: userRole === 'shopkeeper' ? (conv.unread_count_customer || 0) + 1 : conv.unread_count_customer,
+        unread_count_shop: userRole === 'customer' ? (conv.unread_count_shop || 0) + 1 : conv.unread_count_shop,
         updated_at: new Date().toISOString(),
       })
       .eq('id', id);
@@ -481,6 +492,13 @@ export const sendMessage = async (req, res, next) => {
     const io = req.app.get('io');
     if (io) {
       io.to(`conversation_${id}`).emit('new_message', formatted);
+      io.emit('new_message', formatted);
+      io.emit('chat_notification', {
+        conversationId: id,
+        senderId: userId,
+        senderName: userName || 'User',
+        text: text || 'New message',
+      });
     }
 
     return res.status(201).json({ success: true, message: formatted });

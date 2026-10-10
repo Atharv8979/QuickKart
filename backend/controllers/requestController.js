@@ -428,7 +428,7 @@ export const getShopRelevantRequests = async (req, res, next) => {
             quantity: r.quantity || 1,
             unit: r.unit || 'piece',
             shopStock: match ? match.quantity_in_stock : 10,
-            customerOffer: r.expected_budget || (match ? Math.round(match.price * 0.9) : 60),
+            customerOffer: (r.expected_budget !== null && r.expected_budget !== undefined && Number(r.expected_budget) > 0) ? Number(r.expected_budget) : (match ? Math.round(match.price * 0.9) : 60),
             currentPrice: match ? match.price : (r.expected_budget ? Math.round(r.expected_budget * 1.1) : 70),
             status: r.status === 'ACTIVE' ? 'PENDING' : r.status,
             urgency: r.urgency || 'today',

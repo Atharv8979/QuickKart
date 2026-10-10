@@ -72,7 +72,7 @@ export const LiveStateToggleCard = ({ shop, onUpdate }) => {
         </div>
 
         {/* Real-time Toggles Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* 1. Open / Closed Status */}
           <div className="bg-slate-800/80 backdrop-blur-sm p-4 rounded-2xl border border-slate-700/60 flex flex-col justify-between">
             <span className="text-xs text-slate-400 font-semibold block mb-1">

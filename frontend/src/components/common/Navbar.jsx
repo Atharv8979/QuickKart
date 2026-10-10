@@ -222,6 +222,26 @@ export const Navbar = () => {
                 >
                   Live Chat
                 </Link>
+                <Link
+                  to="/customer/payments"
+                  className={`px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                    routerLocation.pathname.includes('/payments')
+                      ? 'bg-brand-50 text-brand-700'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  Payments
+                </Link>
+                <Link
+                  to="/customer/deliveries"
+                  className={`px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                    routerLocation.pathname.includes('/deliveries')
+                      ? 'bg-brand-50 text-brand-700'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  Deliveries
+                </Link>
               </>
             )}
 
@@ -256,6 +276,18 @@ export const Navbar = () => {
                   className="px-3 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                 >
                   Messages
+                </Link>
+                <Link
+                  to="/shop/payments"
+                  className="px-3 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                >
+                  Payments
+                </Link>
+                <Link
+                  to="/shop/deliveries"
+                  className="px-3 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                >
+                  Deliveries
                 </Link>
               </>
             )}
