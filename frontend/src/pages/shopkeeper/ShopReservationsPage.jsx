@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { reservationService } from '../../services/reservationService';
+import { chatService } from '../../services/chatService';
 import { useNotification } from '../../context/NotificationContext';
 import { useSocket } from '../../context/SocketContext';
 import { Badge } from '../../components/common/Badge';
@@ -13,9 +15,11 @@ import {
   User,
   Phone,
   IndianRupee,
+  MessageSquare,
 } from 'lucide-react';
 
 export const ShopReservationsPage = () => {
+  const navigate = useNavigate();
   const { addToast } = useNotification();
   const { socket } = useSocket();
   const [reservations, setReservations] = useState([]);
@@ -52,6 +56,24 @@ export const ShopReservationsPage = () => {
       socket.off('reservation_updated', handleUpdate);
     };
   }, [socket]);
+
+  const handleStartChatWithCustomer = async (resv) => {
+    const cust = typeof resv.customerId === 'object' ? resv.customerId : resv.customer;
+    const custId = cust?.id || resv.customer_id;
+    try {
+      const res = await chatService.getOrCreateConversation({
+        shopId: custId || 'a0000000-0000-0000-0000-000000000001',
+        productName: `Hold Ticket: ${resv.productName}`,
+      });
+      if (res.success && res.conversation) {
+        navigate(`/shopkeeper/messages?c=${res.conversation._id || res.conversation.id}`);
+      } else {
+        navigate('/shopkeeper/messages');
+      }
+    } catch {
+      navigate('/shopkeeper/messages');
+    }
+  };
 
   const handleStatusTransition = async (id, newStatus, note) => {
     try {
@@ -179,20 +201,29 @@ export const ShopReservationsPage = () => {
 
                   {/* Customer Info */}
                   <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="font-bold text-slate-900 flex items-center gap-1">
                         <User className="w-3.5 h-3.5 text-slate-400" />
                         {customer?.name || 'Customer'}
                       </span>
-                      {customer?.phone && (
-                        <a
-                          href={`tel:${customer.phone}`}
-                          className="text-brand-600 font-bold flex items-center gap-1 hover:underline"
+                      <div className="flex items-center gap-2">
+                        {customer?.phone && (
+                          <a
+                            href={`tel:${customer.phone}`}
+                            className="text-brand-600 font-bold flex items-center gap-1 hover:underline"
+                          >
+                            <Phone className="w-3 h-3" />
+                            {customer.phone}
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleStartChatWithCustomer(res)}
+                          className="px-2.5 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-xl hover:bg-emerald-100 flex items-center gap-1 text-[11px] border border-emerald-200"
                         >
-                          <Phone className="w-3 h-3" />
-                          {customer.phone}
-                        </a>
-                      )}
+                          <MessageSquare className="w-3 h-3 text-emerald-600" /> Chat
+                        </button>
+                      </div>
                     </div>
                     {res.customerNote && (
                       <p className="text-slate-600 text-[11px] italic">
