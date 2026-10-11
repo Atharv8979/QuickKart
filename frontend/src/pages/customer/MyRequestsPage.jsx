@@ -19,10 +19,12 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { useSocket } from '../../context/SocketContext';
+import { useNotification } from '../../context/NotificationContext';
 
 export const MyRequestsPage = () => {
   const navigate = useNavigate();
   const { refetchRequests } = useSocket();
+  const { addToast } = useNotification();
   const [requests, setRequests] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -63,17 +65,30 @@ export const MyRequestsPage = () => {
 
   const handleChat = async (responseItem) => {
     try {
+      const shop = responseItem?.shopId ?? responseItem?.shop_id ?? responseItem?.shop;
+      const shopId = typeof shop === 'string' ? shop : shop?._id || shop?.id;
+      if (!shopId) {
+        throw new Error('This offer is not linked to a shop chat.');
+      }
+
       const res = await chatService.getOrCreateConversation({
-        shopId: responseItem.shopId._id || responseItem.shopId,
+        shopId,
         requestId: selectedRequest._id,
         productName: selectedRequest.productName,
         price: responseItem.offeredPrice,
       });
-      if (res.success) {
-        navigate(`/customer/messages?c=${res.conversation._id}`);
+      const conversationId = res?.conversation?._id || res?.conversation?.id;
+      if (res?.success && conversationId) {
+        navigate(`/customer/messages?c=${encodeURIComponent(conversationId)}`);
+      } else {
+        throw new Error(res?.message || 'Could not open the chat with this shop.');
       }
     } catch (err) {
       console.error('Error starting chat:', err);
+      addToast(
+        err.response?.data?.message || err.message || 'Could not open the shop chat. Please try again.',
+        'error'
+      );
     }
   };
 

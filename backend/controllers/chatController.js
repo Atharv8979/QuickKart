@@ -37,13 +37,7 @@ export const getConversations = async (req, res, next) => {
 
     let query = supabase
       .from('conversations')
-      .select(`
-        *,
-        shop:shops(id, shop_name, contact_phone, banner_image, address, rating),
-        customer:users!conversations_customer_id_fkey(id, name, profile_image),
-        product:products(id, name, price, images, brand),
-        last_message:messages!conversations_last_message_id_fkey(text, created_at, sender_id)
-      `)
+      .select('*')
       .order('last_message_at', { ascending: false });
 
     if (userRole === 'customer') {
@@ -63,37 +57,64 @@ export const getConversations = async (req, res, next) => {
 
     if (error) throw error;
 
-    const formatted = (conversations || []).map(c => ({
-      _id: c.id,
-      id: c.id,
-      shop: c.shop ? {
-        _id: c.shop.id,
-        shopName: c.shop.shop_name,
-        contactPhone: c.shop.contact_phone,
-        bannerImage: c.shop.banner_image,
-        address: c.shop.address,
-        rating: c.shop.rating,
-      } : null,
-      customer: c.customer ? {
-        _id: c.customer.id,
-        name: c.customer.name,
-        profileImage: c.customer.profile_image,
-      } : null,
-      productContext: c.product ? {
-        _id: c.product.id,
-        name: c.product.name,
-        price: c.product.price,
-        images: c.product.images,
-        brand: c.product.brand,
-      } : null,
-      lastMessage: c.last_message ? {
-        text: c.last_message.text,
-        createdAt: c.last_message.created_at,
-        senderId: c.last_message.sender_id,
-      } : null,
-      unreadCount: req.user.role === 'customer' ? c.unread_count_customer : c.unread_count_shop,
-      updatedAt: c.updated_at,
-    }));
+    const rows = conversations || [];
+    const shopIds = [...new Set(rows.map((conversation) => conversation.shop_id).filter(Boolean))];
+    const customerIds = [...new Set(rows.map((conversation) => conversation.customer_id).filter(Boolean))];
+    const productIds = [...new Set(rows.map((conversation) => conversation.product_id).filter(Boolean))];
+    const [shopsResult, customersResult, productsResult] = await Promise.all([
+      shopIds.length
+        ? supabase.from('shops').select('id, shop_name, contact_phone, banner_image, address, rating').in('id', shopIds)
+        : Promise.resolve({ data: [], error: null }),
+      customerIds.length
+        ? supabase.from('users').select('id, name, profile_image').in('id', customerIds)
+        : Promise.resolve({ data: [], error: null }),
+      productIds.length
+        ? supabase.from('products').select('id, name, price, images, brand').in('id', productIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (shopsResult.error) throw shopsResult.error;
+    if (customersResult.error) throw customersResult.error;
+    if (productsResult.error) throw productsResult.error;
+
+    const shopsById = new Map((shopsResult.data || []).map((shop) => [shop.id, shop]));
+    const customersById = new Map((customersResult.data || []).map((customer) => [customer.id, customer]));
+    const productsById = new Map((productsResult.data || []).map((product) => [product.id, product]));
+    const formatted = rows.map((c) => {
+      const shop = shopsById.get(c.shop_id);
+      const customer = customersById.get(c.customer_id);
+      const product = productsById.get(c.product_id);
+      return {
+        _id: c.id,
+        id: c.id,
+        shop: shop ? {
+          _id: shop.id,
+          shopName: shop.shop_name,
+          contactPhone: shop.contact_phone,
+          bannerImage: shop.banner_image,
+          address: shop.address,
+          rating: shop.rating,
+        } : null,
+        customer: customer ? {
+          _id: customer.id,
+          name: customer.name,
+          profileImage: customer.profile_image,
+        } : null,
+        productContext: product ? {
+          _id: product.id,
+          name: product.name,
+          price: product.price,
+          images: product.images,
+          brand: product.brand,
+        } : c.product_context || null,
+        lastMessage: c.last_message_text || c.last_message_at ? {
+          text: c.last_message_text,
+          createdAt: c.last_message_at,
+          senderId: c.last_message_sender_id,
+        } : null,
+        unreadCount: req.user.role === 'customer' ? c.unread_count_customer : c.unread_count_shop,
+        updatedAt: c.updated_at,
+      };
+    });
 
     return res.json({ success: true, conversations: formatted });
   } catch (error) {
@@ -151,7 +172,9 @@ export const getOrCreateConversation = async (req, res, next) => {
       .from('conversations')
       .select('*')
       .eq('customer_id', customerId)
-      .eq('shop_id', shopIdFinal);
+      .eq('shop_id', shopIdFinal)
+      .order('last_message_at', { ascending: false })
+      .limit(1);
 
     if (productId) {
       query = query.eq('product_id', productId);
@@ -300,10 +323,7 @@ export const getMessages = async (req, res, next) => {
 
     let query = supabase
       .from('messages')
-      .select(`
-        *,
-        sender:users!messages_sender_id_fkey(id, name, profile_image, role)
-      `)
+      .select('*')
       .eq('conversation_id', id)
       .order('created_at', { ascending: false })
       .limit(parseInt(limit));
@@ -315,6 +335,12 @@ export const getMessages = async (req, res, next) => {
     const { data: messages, error } = await query;
 
     if (error) throw error;
+    const senderIds = [...new Set((messages || []).map((message) => message.sender_id).filter(Boolean))];
+    const { data: senders, error: sendersError } = senderIds.length
+      ? await supabase.from('users').select('id, name, profile_image, role').in('id', senderIds)
+      : { data: [], error: null };
+    if (sendersError) throw sendersError;
+    const sendersById = new Map((senders || []).map((sender) => [sender.id, sender]));
 
     // Mark messages as read
     if (userRole === 'customer') {
@@ -341,23 +367,26 @@ export const getMessages = async (req, res, next) => {
         .eq('id', id);
     }
 
-    const formatted = (messages || []).reverse().map(m => ({
-      _id: m.id,
-      id: m.id,
-      conversationId: m.conversation_id,
-      senderId: m.sender_id,
-      sender: m.sender ? {
-        _id: m.sender.id,
-        name: m.sender.name,
-        profileImage: m.sender.profile_image,
-        role: m.sender.role,
-      } : null,
-      text: m.text,
-      imageUrl: m.image_url,
-      imageThumbnailUrl: m.image_thumbnail_url,
-      messageType: m.message_type,
-      createdAt: m.created_at,
-    }));
+    const formatted = (messages || []).reverse().map((m) => {
+      const sender = sendersById.get(m.sender_id);
+      return {
+        _id: m.id,
+        id: m.id,
+        conversationId: m.conversation_id,
+        senderId: m.sender_id,
+        sender: sender ? {
+          _id: sender.id,
+          name: sender.name,
+          profileImage: sender.profile_image,
+          role: sender.role,
+        } : null,
+        text: m.text,
+        imageUrl: m.image_url,
+        imageThumbnailUrl: m.image_thumbnail_url,
+        messageType: m.message_type,
+        createdAt: m.created_at,
+      };
+    });
 
     return res.json({ success: true, messages: formatted });
   } catch (error) {
@@ -407,7 +436,7 @@ export const sendMessage = async (req, res, next) => {
     // Verify access
     const { data: conv, error: convError } = await supabase
       .from('conversations')
-      .select('customer_id, shop_id, customer:users!conversations_customer_id_fkey(id), shop:shops(id)')
+      .select('customer_id, shop_id, unread_count_customer, unread_count_shop')
       .eq('id', id)
       .single();
 
@@ -449,13 +478,16 @@ export const sendMessage = async (req, res, next) => {
     const { data: message, error } = await supabase
       .from('messages')
       .insert(messageData)
-      .select(`
-        *,
-        sender:users!messages_sender_id_fkey(id, name, profile_image, role)
-      `)
+      .select('*')
       .single();
 
     if (error) throw error;
+    const { data: sender, error: senderError } = await supabase
+      .from('users')
+      .select('id, name, profile_image, role')
+      .eq('id', userId)
+      .single();
+    if (senderError) throw senderError;
 
     // Update conversation last message
     await supabase
@@ -475,11 +507,11 @@ export const sendMessage = async (req, res, next) => {
       id: message.id,
       conversationId: message.conversation_id,
       senderId: message.sender_id,
-      sender: message.sender ? {
-        _id: message.sender.id,
-        name: message.sender.name,
-        profileImage: message.sender.profile_image,
-        role: message.sender.role,
+      sender: sender ? {
+        _id: sender.id,
+        name: sender.name,
+        profileImage: sender.profile_image,
+        role: sender.role,
       } : null,
       text: message.text,
       imageUrl: message.image_url,
