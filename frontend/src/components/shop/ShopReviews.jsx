@@ -6,7 +6,6 @@ import { useSocket } from '../../context/SocketContext';
 export const ShopReviews = ({ shopId, editable = false }) => {
   const { socket, refetchReviews } = useSocket();
   const [reviews, setReviews] = useState([]);
-  const [summary, setSummary] = useState({ averageRating: 0, totalReviews: 0 });
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ rating: 0, comment: '' });
@@ -15,8 +14,7 @@ export const ShopReviews = ({ shopId, editable = false }) => {
     try {
       const res = await reviewService.getShopReviews(shopId);
       if (res.success) {
-        setReviews(res.reviews || []);
-        setSummary(res.summary || { averageRating: 0, totalReviews: 0 });
+        setReviews(Array.isArray(res.reviews) ? res.reviews : []);
       }
     } catch (err) {
       console.error('Error fetching reviews:', err);
@@ -31,18 +29,31 @@ export const ShopReviews = ({ shopId, editable = false }) => {
 
   useEffect(() => {
     if (!socket) return;
+    const getReviewId = (review) => String(review?.id || review?._id || '');
     const handleReviewAdded = (data) => {
-      if (data.review.shop_id === shopId) {
-        setReviews(prev => [data.review, ...prev]);
+      const review = data.review;
+      if ((review.shop_id || review.shopId) === shopId) {
+        setReviews((prev) =>
+          prev.some((existing) => getReviewId(existing) === getReviewId(review))
+            ? prev
+            : [review, ...prev]
+        );
       }
     };
     const handleReviewUpdated = (data) => {
-      if (data.review.shop_id === shopId) {
-        setReviews(prev => prev.map(r => r._id === data.review._id ? data.review : r));
+      const review = data.review;
+      if ((review.shop_id || review.shopId) === shopId) {
+        setReviews((prev) =>
+          prev.map((existing) =>
+            getReviewId(existing) === getReviewId(review) ? review : existing
+          )
+        );
       }
     };
     const handleReviewDeleted = (data) => {
-      setReviews(prev => prev.filter(r => r._id !== data.reviewId));
+      setReviews((prev) =>
+        prev.filter((review) => getReviewId(review) !== String(data.reviewId))
+      );
     };
     socket.on('review_added', handleReviewAdded);
     socket.on('review_updated', handleReviewUpdated);
@@ -100,6 +111,16 @@ export const ShopReviews = ({ shopId, editable = false }) => {
     </div>
   );
 
+  const ratings = reviews
+    .map((review) => Number(review.rating))
+    .filter((rating) => Number.isFinite(rating) && rating >= 1 && rating <= 5);
+  const averageRating = ratings.length
+    ? Number((ratings.reduce((total, rating) => total + rating, 0) / ratings.length).toFixed(1))
+    : 0;
+  const ratingCounts = [5, 4, 3, 2, 1].map((rating) =>
+    ratings.filter((value) => value === rating).length
+  );
+
   const formatDate = (dateStr) => {
     return new Date(dateStr).toLocaleDateString(undefined, {
       year: 'numeric',
@@ -127,47 +148,36 @@ export const ShopReviews = ({ shopId, editable = false }) => {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="text-5xl font-bold text-slate-900">
-              {summary.averageRating || 0}
+              {averageRating.toFixed(1)}
             </div>
             <div>
-              {renderStars(summary.averageRating || 0)}
+              {renderStars(averageRating)}
               <p className="text-sm text-slate-500 mt-1">
-                {summary.totalReviews || 0} {summary.totalReviews === 1 ? 'review' : 'reviews'}
+                {reviews.length} {reviews.length === 1 ? 'review' : 'reviews'}
               </p>
             </div>
           </div>
           <div className="flex-1">
             <div className="w-full max-w-xs">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-1/6 text-xs text-slate-500 text-right">5</div>
-                <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <div className="bg-amber-400 h-full rounded-full" style={{ width: '60%' }}></div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-1/6 text-xs text-slate-500 text-right">4</div>
-                <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <div className="bg-amber-400 h-full rounded-full" style={{ width: '20%' }}></div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-1/6 text-xs text-slate-500 text-right">3</div>
-                <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <div className="bg-amber-400 h-full rounded-full" style={{ width: '10%' }}></div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-1/6 text-xs text-slate-500 text-right">2</div>
-                <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <div className="bg-amber-400 h-full rounded-full" style={{ width: '5%' }}></div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-1/6 text-xs text-slate-500 text-right">1</div>
-                <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <div className="bg-amber-400 h-full rounded-full" style={{ width: '5%' }}></div>
-                </div>
-              </div>
+              {ratingCounts.map((count, index) => {
+                const rating = 5 - index;
+                const percentage = ratings.length ? (count / ratings.length) * 100 : 0;
+                return (
+                  <div
+                    key={rating}
+                    className={`flex items-center gap-2 ${rating === 1 ? '' : 'mb-1'}`}
+                  >
+                    <div className="w-1/6 text-xs text-slate-500 text-right">{rating}</div>
+                    <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className="bg-amber-400 h-full rounded-full"
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                    <span className="w-6 text-right text-xs text-slate-500">{count}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -186,7 +196,7 @@ export const ShopReviews = ({ shopId, editable = false }) => {
         ) : (
           reviews.map(review => (
             <div
-              key={review._id}
+              key={review.id || review._id}
               className="p-6 hover:bg-slate-50 transition-colors"
             >
               <div className="flex items-start gap-4">

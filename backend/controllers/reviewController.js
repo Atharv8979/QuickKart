@@ -188,20 +188,20 @@ export const getShopReviews = async (req, res, next) => {
         .eq('shop_id', shopId)
         .order('created_at', { ascending: false });
 
-      // Get rating summary
-      const { data: summary } = await supabase
-        .from('shops')
-        .select('rating, num_reviews')
-        .eq('id', shopId)
-        .single();
-
       if (!error && reviews) {
+        const ratings = reviews
+          .map((review) => Number(review.rating))
+          .filter((rating) => Number.isFinite(rating) && rating >= 1 && rating <= 5);
+        const averageRating = ratings.length
+          ? Number((ratings.reduce((total, rating) => total + rating, 0) / ratings.length).toFixed(1))
+          : 0;
+
         return res.json({
           success: true,
           reviews,
           summary: {
-            averageRating: summary?.rating || 0,
-            totalReviews: summary?.num_reviews || 0,
+            averageRating,
+            totalReviews: reviews.length,
           },
         });
       }
@@ -269,5 +269,4 @@ async function updateShopRatingSummary(shopId) {
       .eq('id', shopId);
   }
 }
-
 
