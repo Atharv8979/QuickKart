@@ -79,7 +79,9 @@ export const MyRequestsPage = () => {
       });
       const conversationId = res?.conversation?._id || res?.conversation?.id;
       if (res?.success && conversationId) {
-        navigate(`/customer/messages?c=${encodeURIComponent(conversationId)}`);
+        navigate(`/customer/messages?c=${encodeURIComponent(conversationId)}`, {
+          state: { conversation: res.conversation },
+        });
       } else {
         throw new Error(res?.message || 'Could not open the chat with this shop.');
       }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { chatService } from '../../services/chatService';
 import { ChatWindow } from '../../components/chat/ChatWindow';
 import { StartChatModal } from '../../components/chat/StartChatModal';
@@ -9,26 +9,42 @@ import { useSocket } from '../../context/SocketContext';
 
 export const CustomerChatPage = () => {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const initialConvId = searchParams.get('c');
   const { socket } = useSocket();
 
   const [conversations, setConversations] = useState([]);
-  const [activeConversation, setActiveConversation] = useState(null);
+  const [activeConversation, setActiveConversation] = useState(() => (
+    location.state?.conversation ||
+    (initialConvId ? { _id: initialConvId, id: initialConvId } : null)
+  ));
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isStartChatOpen, setIsStartChatOpen] = useState(false);
 
   const fetchConversations = async () => {
+    if (initialConvId) {
+      setActiveConversation((current) => {
+        const currentId = current?._id || current?.id;
+        return currentId === initialConvId
+          ? current
+          : location.state?.conversation || { _id: initialConvId, id: initialConvId };
+      });
+    }
+
     setLoading(true);
     try {
       const res = await chatService.getConversations();
       if (res.success) {
-        setConversations(res.conversations || []);
+        const loadedConversations = res.conversations || [];
+        setConversations(loadedConversations);
         if (initialConvId) {
-          const matched = res.conversations.find((c) => (c._id || c.id) === initialConvId);
-          if (matched) setActiveConversation(matched);
-        } else if (res.conversations.length > 0 && !activeConversation) {
-          setActiveConversation(res.conversations[0]);
+          const matched = loadedConversations.find((c) => (c._id || c.id) === initialConvId);
+          setActiveConversation(
+            matched || location.state?.conversation || { _id: initialConvId, id: initialConvId }
+          );
+        } else if (loadedConversations.length > 0 && !activeConversation) {
+          setActiveConversation(loadedConversations[0]);
         }
       }
     } catch (err) {
@@ -104,7 +120,7 @@ export const CustomerChatPage = () => {
           <RefreshCw className="w-6 h-6 text-emerald-600 animate-spin mx-auto" />
           <p className="text-xs text-slate-500">Syncing live conversations...</p>
         </div>
-      ) : conversations.length === 0 ? (
+      ) : conversations.length === 0 && !activeConversation ? (
         <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-4 shadow-sm">
           <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
             <MessageSquarePlus className="w-8 h-8" />
