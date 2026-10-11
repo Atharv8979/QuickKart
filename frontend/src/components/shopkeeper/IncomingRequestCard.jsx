@@ -3,8 +3,18 @@ import { Clock, MapPin, IndianRupee, Send, CheckCircle2, AlertCircle } from 'luc
 import { Badge } from '../common/Badge';
 
 export const IncomingRequestCard = ({ requestItem, onRespondClick }) => {
-  const hasResponded = !!requestItem.myResponse;
-  const isImmediate = requestItem.urgency === 'immediate';
+  const request = requestItem || {};
+  const response = request.myResponse && typeof request.myResponse === 'object'
+    ? request.myResponse
+    : null;
+  const hasResponded = Boolean(response);
+  const isImmediate = request.urgency === 'immediate';
+  const customerBudget = request.expectedBudget ?? request.expected_budget ?? request.budget;
+  const distanceKm = Number(request.distanceKm);
+  const hasDistance = request.distanceKm != null && request.distanceKm !== '' && Number.isFinite(distanceKm);
+  const availabilityStatus = response?.availabilityStatus
+    ? String(response.availabilityStatus).replace(/_/g, ' ')
+    : 'available';
 
   return (
     <div
@@ -24,7 +34,7 @@ export const IncomingRequestCard = ({ requestItem, onRespondClick }) => {
               }`}
             />
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              {requestItem.category}
+              {request.category || 'Product Request'}
             </span>
           </div>
 
@@ -36,7 +46,7 @@ export const IncomingRequestCard = ({ requestItem, onRespondClick }) => {
 
         {/* Product Title */}
         <h4 className="text-base font-black text-slate-900 leading-snug">
-          {requestItem.productName}
+          {request.productName || 'Requested product'}
         </h4>
 
         {/* Details Grid */}
@@ -44,14 +54,14 @@ export const IncomingRequestCard = ({ requestItem, onRespondClick }) => {
           <div>
             <span className="text-slate-400 font-medium">Quantity Needed:</span>
             <p className="font-bold text-slate-800">
-              {requestItem.quantity} {requestItem.unit}
+              {request.quantity ?? 1} {request.unit || 'piece'}
             </p>
           </div>
 
           <div>
             <span className="text-slate-400 font-medium">Customer Budget:</span>
             <p className="font-bold text-slate-800">
-              {requestItem.budget ? `₹${requestItem.budget}` : 'Flexible'}
+              {customerBudget != null ? `₹${customerBudget}` : 'Flexible'}
             </p>
           </div>
 
@@ -59,22 +69,22 @@ export const IncomingRequestCard = ({ requestItem, onRespondClick }) => {
             <span className="text-slate-400 font-medium">Customer Distance:</span>
             <p className="font-bold text-brand-600 flex items-center gap-0.5">
               <MapPin className="w-3 h-3" />
-              {requestItem.distanceKm ? `${requestItem.distanceKm.toFixed(1)} km away` : 'Nearby'}
+              {hasDistance ? `${distanceKm.toFixed(1)} km away` : 'Nearby'}
             </p>
           </div>
 
           <div>
             <span className="text-slate-400 font-medium">Customer Name:</span>
             <p className="font-bold text-slate-800">
-              {requestItem.customerId?.name || 'Customer'}
+              {request.customerName || request.customerId?.name || request.customer?.name || 'Customer'}
             </p>
           </div>
         </div>
 
         {/* Note */}
-        {requestItem.note && (
+        {(request.notes || request.note) && (
           <p className="text-xs text-slate-600 italic mt-2.5 bg-brand-50/50 p-2.5 rounded-xl border border-brand-100">
-            Note: "{requestItem.note}"
+            Note: "{request.notes || request.note}"
           </p>
         )}
 
@@ -84,12 +94,12 @@ export const IncomingRequestCard = ({ requestItem, onRespondClick }) => {
             <div className="flex justify-between items-center font-bold">
               <span>Your Sent Quote:</span>
               <span className="text-emerald-700 font-black text-sm">
-                ₹{requestItem.myResponse.offeredPrice}
+                ₹{response.offeredPrice ?? response.offered_price ?? '—'}
               </span>
             </div>
             <p className="text-[11px] text-emerald-700 mt-0.5">
-              Status: {requestItem.myResponse.availabilityStatus.replace('_', ' ')} • Ready in ~
-              {requestItem.myResponse.preparationTimeMinutes} min
+              Status: {availabilityStatus} • Ready in ~
+              {response.preparationTimeMinutes ?? response.prepEtaMinutes ?? response.prep_eta_minutes ?? 10} min
             </p>
           </div>
         )}
@@ -98,7 +108,7 @@ export const IncomingRequestCard = ({ requestItem, onRespondClick }) => {
       {/* Action */}
       <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
         <button
-          onClick={() => onRespondClick(requestItem)}
+          onClick={() => onRespondClick?.(request)}
           className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm ${
             hasResponded
               ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'

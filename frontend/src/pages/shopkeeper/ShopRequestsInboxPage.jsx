@@ -9,6 +9,7 @@ export const ShopRequestsInboxPage = () => {
   const [requests, setRequests] = useState([]);
   const [filter, setFilter] = useState('ALL');
   const [loading, setLoading] = useState(true);
+  const [selectedRequest, setSelectedRequest] = useState(null);
   const { refetchRequests } = useSocket();
 
   const fetchRequests = async () => {
@@ -16,7 +17,7 @@ export const ShopRequestsInboxPage = () => {
     try {
       const res = await requestService.getShopRelevantRequests();
       if (res.success) {
-        setRequests(res.requests);
+        setRequests(Array.isArray(res.requests) ? res.requests.filter(Boolean) : []);
       }
     } catch (err) {
       console.error('Error fetching shop requests:', err);
@@ -105,9 +106,9 @@ export const ShopRequestsInboxPage = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredRequests.map((reqItem) => (
+          {filteredRequests.map((reqItem, index) => (
             <IncomingRequestCard
-              key={reqItem._id}
+              key={reqItem._id || reqItem.id || `request-${index}`}
               requestItem={reqItem}
               onRespondClick={(target) => setSelectedRequest(target)}
             />

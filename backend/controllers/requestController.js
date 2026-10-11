@@ -416,13 +416,17 @@ export const getShopRelevantRequests = async (req, res, next) => {
 
       if (!error && requests) {
         const formatted = requests.map((r) => {
-          const match = shopProducts.find(
-            (p) => p.name.toLowerCase().includes(r.product_name.toLowerCase()) || r.product_name.toLowerCase().includes(p.name.toLowerCase())
-          );
+          const productName = String(r.product_name || '');
+          const match = shopProducts.find((p) => {
+            const shopProductName = String(p?.name || '');
+            return shopProductName && productName &&
+              (shopProductName.toLowerCase().includes(productName.toLowerCase()) ||
+                productName.toLowerCase().includes(shopProductName.toLowerCase()));
+          });
           return {
             _id: r.id,
             id: r.id,
-            productName: r.product_name,
+            productName: productName || 'Requested product',
             productImage: match?.images?.[0] || 'https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=600&q=80',
             category: r.category,
             quantity: r.quantity || 1,
@@ -969,4 +973,3 @@ export const confirmBargainDeal = async (req, res, next) => {
 // Aliases for backwards compatibility
 export const createBroadcastRequest = createRequest;
 export const getShopRequestsInbox = getShopRelevantRequests;
-
